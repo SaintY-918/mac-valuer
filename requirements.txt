@@ -1,0 +1,8 @@
+google-generativeai
+playwright
+streamlit
+pandas
+tabulate
+pydantic
+python-dotenv
+numpy
