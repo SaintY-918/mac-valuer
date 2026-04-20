@@ -1,7 +1,7 @@
 import sqlite3
 import json
 import os
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 class DBManager:
     def __init__(self, db_path="mac_deals.db"):
@@ -36,6 +36,23 @@ class DBManager:
         except Exception as e:
             print(f"DB Read Error: {e}")
         return None
+
+    def get_all_parsed_deals(self) -> List[Dict]:
+        """Retrieves all historical deals that have been successfully parsed."""
+        results = []
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cur = conn.execute("SELECT * FROM deals WHERE parsed_json IS NOT NULL")
+                rows = cur.fetchall()
+                for row in rows:
+                    item = json.loads(row["parsed_json"])
+                    item["original_title"] = row["title"]
+                    item["url"] = row["url"]
+                    results.append(item)
+        except Exception as e:
+            print(f"DB Bulk Read Error: {e}")
+        return results
 
     def save_deal(self, url: str, title: str, body_content: str, parsed_json: Optional[Dict] = None):
         try:

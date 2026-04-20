@@ -24,8 +24,9 @@ class MacBookSpec(BaseModel):
     release_year: Optional[int] = Field(None, description="Year of model release")
     series: Optional[ModelSeries] = Field(None, description="Model series: Air, Pro 13, or Pro 14/16")
     price: Optional[float] = Field(None, description="Listing price of the device")
-    is_year_inferred: bool = False # Track if the year was guessed by system
-    is_spec_inferred: bool = False # Track if RAM/SSD was guessed by system
+    location: Optional[str] = Field(None, description="Trading location, e.g., Taipei, Hsinchu")
+    is_year_inferred: bool = False
+    is_spec_inferred: bool = False
     
     @property
     def ram_weight(self) -> float:
