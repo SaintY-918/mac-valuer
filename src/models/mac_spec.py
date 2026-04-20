@@ -25,6 +25,9 @@ class MacBookSpec(BaseModel):
     series: Optional[ModelSeries] = Field(None, description="Model series: Air, Pro 13, or Pro 14/16")
     price: Optional[float] = Field(None, description="Listing price of the device")
     location: Optional[str] = Field(None, description="Trading location, e.g., Taipei, Hsinchu")
+    battery_health: Optional[int] = Field(None, description="Battery health percentage, e.g., 89")
+    warranty_status: Optional[str] = Field(None, description="Warranty info, e.g., '2025-12' or '已過保'")
+    condition: Optional[str] = Field(None, description="Physical condition, e.g., '全新', '輕微使用痕跡'")
     is_year_inferred: bool = False
     is_spec_inferred: bool = False
     

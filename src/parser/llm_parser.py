@@ -1,20 +1,19 @@
+import logging
 import os
 import json
-import time
 import re
-import google.generativeai as genai
-from typing import List, Optional, Dict
+from typing import Optional
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 from src.models.mac_spec import MacBookSpec, ModelSeries
 
-# Load environment variables from .env
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 
-# Configure Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-# Initialize Gemini Flash Lite model
-model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
+_model_id = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def preprocess_text(text: str) -> str:
     """Normalizes characters and handles common PTT separators."""
@@ -67,7 +66,7 @@ def infer_correct_year(item: dict, title: str) -> tuple:
         elif "m4" in chip.lower(): inferred_year = 2024
         elif "m5" in chip.lower(): inferred_year = 2025
         elif "m1" in chip.lower(): inferred_year = 2021
-        elif "m2" in chip.lower(): inferred_year = 2022
+        elif "m2" in chip.lower(): inferred_year = 2023
     elif "air" in series.lower():
         if "m3" in chip.lower(): inferred_year = 2024
         elif "m4" in chip.lower(): inferred_year = 2025
@@ -88,24 +87,41 @@ def parse_deal_llm(title: str, body_content: str) -> Optional[MacBookSpec]:
     final_ram = title_ram or body_ram
     final_ssd = title_ssd or body_ssd
 
-    prompt = f"""
-You are an expert at extracting MacBook specs from PTT posts.
-Extract info into a JSON object.
+    prompt = f"""You are an expert at parsing Taiwanese PTT MacBook second-hand listings.
+Extract the following fields and return ONLY a JSON object matching this exact schema.
+If a field cannot be determined with confidence, set it to null — never guess.
 
-### CRITICAL:
-1. **location**: Extract trading regions. Return as a SINGLE STRING (e.g., "Taipei/Taichung").
-2. **price**: Use "[售價]" tag. Return as a PURE NUMBER (no commas).
-3. **specs**: 1TB = 1024.
+SCHEMA:
+{{
+  "chip":            "M1" | "M1 Pro" | "M1 Max" | "M2" | "M2 Pro" | "M2 Max" | "M3" | "M3 Pro" | "M3 Max" | "M4" | "M4 Pro" | "M4 Max" | null,
+  "ram_gb":          <integer, e.g. 8 / 16 / 24 / 32> | null,
+  "ssd_gb":          <integer in GB; 1TB = 1024, 2TB = 2048> | null,
+  "screen_size":     <float, e.g. 13.3 / 14.0 / 15.0 / 16.0> | null,
+  "release_year":    <4-digit integer> | null,
+  "series":          "Air" | "Pro 13" | "Pro 14/16" | null,
+  "price":           <integer, no commas; look for [售價] tag> | null,
+  "location":        <single string with "/" separator, e.g. "台北/新竹"> | null,
+  "battery_health":  <integer 0-100, e.g. 89; only if explicitly stated> | null,
+  "warranty_status": <string, e.g. "2025-12" or "已過保" or "AppleCare+"; only if explicit> | null,
+  "condition":       <string, e.g. "全新未拆" / "九成新" / "輕微使用痕跡" / "明顯使用痕跡"; only if explicit> | null
+}}
 
-### POST DATA:
+RULES:
+- price: must be a plain integer (no commas, no $ sign). Look for [售價] tag first.
+- ssd_gb: convert TB to GB (1T = 1024, 2T = 2048).
+- location: join multiple cities with "/" into one string.
+- battery_health / warranty_status / condition: extract ONLY when the seller explicitly states them. Otherwise null.
+
+POST DATA:
 TITLE: {clean_title}
 BODY:
 {clean_body}
 """
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(response_mime_type="application/json"),
+        response = _client.models.generate_content(
+            model=_model_id,
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
         json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
         if not json_match: return None
@@ -136,5 +152,5 @@ BODY:
             
         return MacBookSpec(**item)
     except Exception as e:
-        print(f"   [LLM Parser] Error: {e}")
+        logger.warning("LLM parser error: %s", e)
         return None

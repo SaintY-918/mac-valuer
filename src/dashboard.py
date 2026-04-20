@@ -1,87 +1,110 @@
-import streamlit as st
-import pandas as pd
 import os
 
-# Set page config
-st.set_page_config(page_title="saintech MacBook 智慧估價", layout="wide")
+import pandas as pd
+import requests
+import streamlit as st
 
-st.title("🍎 saintech 二手 MacBook 智慧估價系統")
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
+
+st.set_page_config(page_title="mac-valuer | 二手 MacBook 估價", layout="wide")
+st.title("二手 MacBook 智慧估價系統")
 st.markdown("---")
 
-# Check if report exists
-REPORT_PATH = "valuation_report.csv"
+# --- Sidebar filters ---
+st.sidebar.header("篩選條件")
 
-if not os.path.exists(REPORT_PATH):
-    st.warning(f"⚠️ 找不到 {REPORT_PATH}。請先執行 `python src/main.py` 生成評估報告。")
-else:
-    # Load data
-    df = pd.read_csv(REPORT_PATH)
-    
-    # Sidebar Filters
-    st.sidebar.header("🔍 篩選條件")
-    
-    # Chip Filter
-    all_chips = sorted(df['Chip'].unique().tolist())
-    selected_chips = st.sidebar.multiselect("選擇晶片系列", all_chips, default=all_chips)
-    
-    # Price Filter
-    df['Price_Num'] = df['Price'].str.replace(',', '').astype(int)
-    min_p, max_p = int(df['Price_Num'].min()), int(df['Price_Num'].max())
-    price_range = st.sidebar.slider("價格範圍", min_p, max_p, (min_p, max_p))
+chip_input = st.sidebar.text_input("晶片型號（模糊比對）", placeholder="例如：M3")
+ram_options = [None, 8, 16, 18, 24, 32, 36, 48, 64]
+ram_gb = st.sidebar.selectbox("RAM 大小", ram_options, format_func=lambda x: "不限" if x is None else f"{x} GB")
+min_price = st.sidebar.number_input("最低價格（TWD）", min_value=0, value=0, step=1000)
+max_price = st.sidebar.number_input("最高價格（TWD）", min_value=0, value=0, step=1000)
+show_sold = st.sidebar.checkbox("顯示已售出物件", value=False)
 
-    # Apply Filters
-    df_filtered = df[df['Chip'].isin(selected_chips)]
-    df_filtered = df_filtered[(df_filtered['Price_Num'] >= price_range[0]) & (df_filtered['Price_Num'] <= price_range[1])]
-    
-    # 🏆 Best Deal Highlight
-    if not df_filtered.empty:
-        df_filtered = df_filtered.sort_values(by="VFM Score", ascending=False)
-        best_deal = df_filtered.iloc[0]
+# --- Fetch from API ---
+params: dict = {"status": "sold" if show_sold else "available"}
+if chip_input:
+    params["chip"] = chip_input
+if ram_gb:
+    params["ram_gb"] = ram_gb
+if min_price > 0:
+    params["min_price"] = min_price
+if max_price > 0:
+    params["max_price"] = max_price
 
-        st.success(f"### 🏆 今日性價比之王")
-        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-        with col1:
-            st.metric("最推薦標題", best_deal['Title'])
-        with col2:
-            st.metric("晶片", best_deal['Chip'])
-        with col3:
-            st.metric("價格", f"{best_deal['Price']} 元")
-        with col4:
-            st.metric("性價比分數", f"{best_deal['VFM Score']} pts")
-        
-        st.markdown("---")
+try:
+    resp = requests.get(f"{API_BASE}/api/deals", params=params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    deals = data.get("deals", [])
+except requests.exceptions.ConnectionError:
+    st.error(
+        f"無法連線到 API 伺服器（{API_BASE}）。\n\n"
+        "請先執行：`uvicorn api.main:app --reload --port 8000`"
+    )
+    st.stop()
+except Exception as e:
+    st.error(f"API 錯誤：{e}")
+    st.stop()
 
-        # 📊 Data Table
-        st.subheader("📋 完整估價列表")
-        st.write("💡 點擊欄位標題可進行排序 | 🟢 系統推斷年份")
-        
-        # Format display dataframe
-        display_df = df_filtered.copy()
-        
-        # Identification for inferred years
-        if 'is_year_inferred' in display_df.columns:
-            display_df['Year'] = display_df.apply(
-                lambda x: f"{int(x['Year'])} 🟢" if x['is_year_inferred'] else f"{int(x['Year'])}", axis=1
-            )
-            display_df = display_df.drop(columns=['is_year_inferred'])
+if not deals:
+    st.warning("找不到符合條件的物件。請調整篩選條件後重試。")
+    st.stop()
 
-        # Display dataframe with specific columns
-        cols_to_show = ["Title", "Chip", "RAM", "SSD", "Size", "Year", "Price", "VFM Score"]
-        st.dataframe(
-            display_df[cols_to_show],
-            use_container_width=True,
-            column_config={
-                "VFM Score": st.column_config.NumberColumn(format="%.2f ⭐"),
-                "Price": "價格 (TWD)",
-                "Year": "上市年份",
-                "Size": "螢幕尺寸"
-            },
-            hide_index=True
-        )
-    else:
-        st.error("❌ 找不到符合篩選條件的機型。")
+df = pd.DataFrame(deals)
 
-# Sidebar Footer
+# --- Best deal highlight ---
+best = df.iloc[0]
+st.success("### 今日性價比之王")
+c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+with c1:
+    st.metric("標題", best.get("original_title", "")[:40])
+with c2:
+    st.metric("晶片", best.get("chip", "-"))
+with c3:
+    price_val = best.get("price")
+    st.metric("價格", f"{int(price_val):,} 元" if price_val else "-")
+with c4:
+    vfm = best.get("vfm_score")
+    st.metric("VFM 分數", f"{vfm} pts" if vfm else "-")
+
+st.markdown("---")
+
+# --- Data table ---
+st.subheader(f"完整列表（共 {len(df)} 筆）")
+
+display_cols = {
+    "original_title": "標題",
+    "chip": "晶片",
+    "ram_gb": "RAM (GB)",
+    "ssd_gb": "SSD (GB)",
+    "screen_size": "螢幕吋",
+    "release_year": "年份",
+    "price": "價格 (TWD)",
+    "location": "地區",
+    "battery_health": "電池健康",
+    "warranty_status": "保固",
+    "condition": "成色",
+    "vfm_score": "VFM 分數",
+}
+
+available = [c for c in display_cols if c in df.columns]
+display_df = df[available].rename(columns=display_cols)
+
+if "年份" in display_df.columns:
+    display_df["年份"] = display_df["年份"].apply(
+        lambda x: str(int(x)) if pd.notna(x) and x != 0 else "-"
+    )
+
+st.dataframe(
+    display_df,
+    use_container_width=True,
+    column_config={
+        "VFM 分數": st.column_config.NumberColumn(format="%.2f ⭐"),
+        "價格 (TWD)": st.column_config.NumberColumn(format="%d"),
+        "電池健康": st.column_config.NumberColumn(format="%d %%"),
+    },
+    hide_index=True,
+)
+
 st.sidebar.markdown("---")
-st.sidebar.info("💡 提示：🟢 代表年份為系統智慧推斷。")
-st.sidebar.text("Data source: PTT MacShop")
+st.sidebar.caption(f"資料來源：PTT MacShop　｜　API：{API_BASE}")
