@@ -127,6 +127,8 @@ class DBManager:
         ram_gb: Optional[int] = None,
         chip: Optional[str] = None,
         source: Optional[str] = None,
+        screen_size: Optional[int] = None,
+        model_type: Optional[str] = None,
     ) -> List[Dict]:
         """Query deals with optional filters. status/source filtered in SQL; others in Python."""
         try:
@@ -149,6 +151,17 @@ class DBManager:
                 if ram_gb is not None and item.get("ram_gb") != ram_gb:
                     continue
                 if chip is not None and chip.lower() not in str(item.get("chip", "")).lower():
+                    continue
+                if model_type == "Air" and item.get("series") != "Air":
+                    continue
+                if model_type == "Pro" and item.get("series") not in ["Pro 13", "Pro 14/16"]:
+                    continue
+                if screen_size is not None:
+                    ss = item.get("screen_size")
+                    if not ss or int(ss) != screen_size:
+                        continue
+                price = item.get("price")
+                if not price or float(price) < 5000 or float(price) > 250000:
                     continue
                 item["original_title"] = d.title
                 item["url"] = d.url

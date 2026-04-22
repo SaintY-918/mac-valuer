@@ -1,7 +1,7 @@
 # mac-valuer — 最高指導原則
 
 > 本文件是本專案的架構聖經。每一次重構、每一個新功能，都必須符合這份規格的精神。
-> 最後更新：2026-04-20（重構計畫書 v1.0 確認版）
+> 最後更新：2026-04-23（v1.1，同步實際實作狀況）
 
 ---
 
@@ -190,19 +190,56 @@ Prompt 中必須明確定義回傳的 JSON schema，範例：
 
 ### 動態權重
 
-VFM 公式必須接受 `ScoringWeights` 參數物件，支援前端傳入自訂權重：
+VFM 公式必須接受 `ScoringWeights` 參數物件，支援前端傳入自訂權重。
+
+**機型×螢幕組合加成（取代舊版分離的機型加成 + 螢幕加成）：**
+
+| 組合 | 預設加權 | 說明 |
+|------|---------|------|
+| Air 13" | 1.00 | 基準 |
+| Air 15" | 1.08 | 較大螢幕 |
+| Pro 13" | 1.00 | 和 Air 13" 同等，差異悠晶片基準分體現 |
+| Pro 14" | 1.18 | ProMotion + Mini-LED + 齐全 port |
+| Pro 16" | 1.22 | 旗艦散熱 + 最大螢幕 |
 
 ```python
+# 實際實作：dashboard.py 的 _recalc_vfm
 class ScoringWeights(BaseModel):
-    ram_multiplier: float = 1.2    # 16G+ 時套用
-    ssd_multiplier: float = 1.1    # 1T+ 時套用（新增，修復忽略 SSD 的問題）
-    model_weight_air: float = 1.0
-    model_weight_pro13: float = 1.05
-    model_weight_pro14_16: float = 1.25
+    ram_multiplier: float = 1.25   # RAM ≥16GB 時套用
+    ssd_multiplier: float = 1.10   # SSD ≥1TB 時套用
+    # 機型×螢幕組合加權（取代舊版分離的 model_weight + screen_weight）
+    form_air13:  float = 1.00
+    form_air15:  float = 1.08
+    form_pro13:  float = 1.00
+    form_pro14:  float = 1.18
+    form_pro16:  float = 1.22
 
 def get_vfm_score(spec: MacBookSpec, weights: ScoringWeights = ScoringWeights()) -> float:
     ...
 ```
+
+### VFM 公式
+
+```
+VFM = (晶片基準分 × 0.9^age × RAM加成 × SSD加成 × 形態加成) ÷ 售價 × 1000
+
+其中：
+- 晶片基準分：M1=8500 / M2=10000 / M3=11500 / M4=14500（Pro/Max 更高）
+- age = 今年 - release_year
+- RAM加成：≥1 TB 時套用 ram_multiplier
+- SSD加成：≥1 TB 時套用 ssd_multiplier
+- 形態加成：上方表格中對應的 form_* 權重
+```
+
+### VFM 分數顏色分級（Dashboard 展示）
+
+顏色閾値依據**全庫所有資料（不受篩選影響）**的百分位數計算，常饁4鐵包官方統計：
+
+| 顏色 | 閾値 | 含義 |
+|------|------|------|
+| 🟢 綠 | ≥ p75 | 全庫前 25%，優谀 |
+| 🟡 黃 | ≥ p50 | 全庫前 50%，普通 |
+| 🔴 紅 | < p50 | 全庫後 50%，偏貴 |
 
 ### MacBook Pro M2 年份修正
 
@@ -233,11 +270,13 @@ POST /api/score/calculate
 
 | Phase | 範圍 | 狀態 |
 |-------|------|------|
-| **P0** | 修 Gemini model ID；chip fallback 改 None；補 `feedparser` 到 requirements.txt；修 M2 Pro 年份 | 待執行 |
+| **P0** | 修 Gemini model ID；chip fallback 改 None；補 `feedparser` 到 requirements.txt；修 M2 Pro 年份 | ✅ 完成 |
 | **P1** | DB 遷移至 SQLAlchemy + env var 連線字串；新增 status/first_seen 欄位；修復 upsert 邏輯 | ✅ 完成 |
-| **P2** | 爬蟲全改 async_playwright；建立 BaseScraper 介面；PTT 實作繼承介面 | 待執行 |
+| **P2** | 爬蟲全改 async_playwright；建立 BaseScraper 介面；PTT 實作繼承介面 | ✅ 完成 |
 | **P3** | Score Engine 動態化（ScoringWeights）；FastAPI 建立 | ✅ 完成 |
 | **P4** | MacBookSpec 新增 3 個 Optional 欄位；LLM Prompt 更新 schema；前端消費 API | ✅ 完成 |
+| **P5** | Dashboard 形態加成（Air 13/15, Pro 13/14/16 組合）；全庫固定 VFM 顏色閾值；SSD 篩選；緊湊分頁器 | ✅ 完成 |
+
 
 ---
 
@@ -245,7 +284,7 @@ POST /api/score/calculate
 
 | # | 問題 | 修復方式 | Phase |
 |---|------|---------|-------|
-| 1 | Gemini model ID `gemini-3.1-flash-lite-preview` 不存在 | 改 `gemini-2.0-flash-lite`，env var 注入 | P0 |
+| 1 | Gemini model ID `gemini-3.1-flash-lite` 不存在 | 改 `gemini-2.0-flash-lite`，env var 注入；目前也可用 `gemini-3.1-flash-lite-preview` | P0 |
 | 2 | `sync_playwright` + `ThreadPoolExecutor` 不安全 | 全改 `async_playwright` + `asyncio.gather` | P2 |
 | 3 | `clean_data()` import 後從未呼叫（死碼） | 整合進 pipeline | P1 |
 | 4 | Chip 找不到時 fallback 預設 `"M1"` | 改為回傳 `None`，下游跳過 | P0 |

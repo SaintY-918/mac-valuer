@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from src.models.mac_spec import MacBookSpec, ModelSeries
+from src.parser.text_extractor import (
+    extract_price, extract_location, extract_warranty, extract_spec_line,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +19,52 @@ _model_id = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
 _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def preprocess_text(text: str) -> str:
-    """Normalizes characters and handles common PTT separators."""
-    replacements = {
-        '吋': '"', '”': '"', '’': "'", '｜': '/', '|': '/',
-        '：': ':', '，': ',', 'Ｇ': 'G', 'Ｂ': 'B', 'Ｔ': 'T', 'Ｍ': 'M',
-        '記憶體': 'RAM', '硬碟': 'SSD'
-    }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
+    DQ = chr(34)
+    SQ = chr(39)
+    text = text.replace(chr(21515), DQ)
+    text = text.replace(chr(8220), DQ)
+    text = text.replace(chr(8221), DQ)
+    text = text.replace(chr(8216), SQ)
+    text = text.replace(chr(8217), SQ)
+    text = text.replace(chr(65372), chr(47))
+    text = text.replace(chr(124), chr(47))
+    text = text.replace(chr(65306), chr(58))
+    text = text.replace(chr(65292), chr(44))
+    text = text.replace(chr(65319), chr(71))
+    text = text.replace(chr(65314), chr(66))
+    text = text.replace(chr(65332), chr(84))
+    text = text.replace(chr(65325), chr(77))
+    text = text.replace(chr(35352)+chr(25014)+chr(39636), chr(82)+chr(65)+chr(77))
+    text = text.replace(chr(30828)+chr(30879), chr(83)+chr(83)+chr(68))
     return text
+
+_SCREEN_SIZE_MAP = {13: 13.3, 14: 14.0, 15: 15.0, 16: 16.0}
+
+def extract_screen_size_from_text(text: str) -> Optional[float]:
+    """Returns screen size float or None. Handles decimal (13.6), inch markers (吋/"/'), and context."""
+    text = preprocess_text(text)
+
+    # 1. Explicit decimal: 13.3, 13.6, 14.2, 15.3, 16.0 — return exact value
+    m = re.search(r'\b(1[3456]\.\d)\b', text)
+    if m:
+        return float(m.group(1))
+
+    # 2. Integer + any inch marker: 15", 15', 15inch  (吋 already → " via preprocess)
+    m = re.search(r'\b(13|14|15|16)\s*(?:"|\'|inch\b|-inch\b)', text, re.IGNORECASE)
+    if m:
+        return _SCREEN_SIZE_MAP.get(int(m.group(1)))
+
+    # 3. Screen number immediately before chip gen: "16 M1 Pro", "13 M4"
+    m = re.search(r'\b(13|14|15|16)\s+M[1-5]', text, re.IGNORECASE)
+    if m:
+        return _SCREEN_SIZE_MAP.get(int(m.group(1)))
+
+    # 4. MacBook model name before number: "MacBook Pro 16", "Air 15"
+    m = re.search(r'(?:macbook\s+)?(?:air|pro)\s+(13|14|15|16)\b', text, re.IGNORECASE)
+    if m:
+        return _SCREEN_SIZE_MAP.get(int(m.group(1)))
+
+    return None
 
 def extract_specs_from_text(text: str) -> tuple:
     """Priority 1: Slash patterns (e.g., 16/512). Returns (ram, ssd)."""
@@ -82,10 +122,24 @@ def infer_correct_year(item: dict, title: str) -> tuple:
 def parse_deal_llm(title: str, body_content: str) -> Optional[MacBookSpec]:
     clean_title = preprocess_text(title)
     clean_body = preprocess_text(body_content)
+
+    # --- Structured PTT section extraction (highest priority) ---
+    struct_price = extract_price(clean_body)
+    struct_location = extract_location(clean_body)
+    struct_warranty = extract_warranty(clean_body)
+    spec_line = extract_spec_line(clean_body)
+
+    # RAM/SSD: title > [規格] section > full body
     title_ram, title_ssd = extract_specs_from_text(clean_title)
+    spec_ram, spec_ssd = extract_specs_from_text(spec_line) if spec_line else (None, None)
     body_ram, body_ssd = extract_specs_from_text(clean_body)
-    final_ram = title_ram or body_ram
-    final_ssd = title_ssd or body_ssd
+    final_ram = title_ram or spec_ram or body_ram
+    final_ssd = title_ssd or spec_ssd or body_ssd
+
+    # screen_size: title > [規格/型號] section > full body (LLM still overrides all)
+    title_screen = extract_screen_size_from_text(clean_title)
+    spec_screen = extract_screen_size_from_text(spec_line) if spec_line else None
+    regex_screen = title_screen or spec_screen or extract_screen_size_from_text(clean_body)
 
     prompt = f"""You are an expert at parsing Taiwanese PTT MacBook second-hand listings.
 Extract the following fields and return ONLY a JSON object matching this exact schema.
@@ -129,17 +183,29 @@ BODY:
         if item.get("ignore"): return None
         
         # --- DATA CLEANUP ---
-        # 1. Price cleanup (remove commas if AI returned string)
-        if isinstance(item.get("price"), str):
+        # 1. Price: structured [售價] > LLM (normalise string fallback)
+        if struct_price:
+            item["price"] = struct_price
+        elif isinstance(item.get("price"), str):
             item["price"] = float(item["price"].replace(",", "").replace("$", ""))
-            
-        # 2. Location cleanup (convert list to string)
-        if isinstance(item.get("location"), list):
+
+        # 2. Location: structured [交易方式/地點] > LLM (normalise list fallback)
+        if struct_location:
+            item["location"] = struct_location
+        elif isinstance(item.get("location"), list):
             item["location"] = "/".join(item["location"])
-        
-        # 3. Specs priority
+
+        # 3. Warranty: structured [保固] fills gap when LLM returns null
+        if struct_warranty and not item.get("warranty_status"):
+            item["warranty_status"] = struct_warranty
+
+        # 4. RAM/SSD: regex (title > spec section > body) overrides LLM
         if final_ram: item["ram_gb"] = final_ram
         if final_ssd: item["ssd_gb"] = final_ssd
+
+        # 5. Screen size: LLM > regex (title > spec section > body)
+        if not item.get("screen_size"):
+            item["screen_size"] = regex_screen
         
         is_spec_inferred = (not item.get("ram_gb") or not item.get("ssd_gb"))
         correct_year, was_inferred = infer_correct_year(item, clean_title)

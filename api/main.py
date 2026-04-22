@@ -53,6 +53,13 @@ def list_deals(
     ram_gb: Optional[int] = Query(None, description="RAM 大小（GB），例如 16"),
     chip: Optional[str] = Query(None, description="晶片型號（模糊比對），例如 M3"),
     source: Optional[str] = Query(None, description="來源平台，例如 ptt"),
+    screen_size: Optional[int] = Query(None),
+    model_type: Optional[str] = Query(None),
+    ram_multiplier: float = Query(1.25),
+    ssd_multiplier: float = Query(1.1),
+    model_weight_air: float = Query(1.0),
+    model_weight_pro13: float = Query(1.0),
+    model_weight_pro14_16: float = Query(1.25),
 ):
     """列出符合條件的二手 Mac 物件，每筆附帶 VFM 分數，預設只回傳 available 狀態。"""
     db = DBManager()
@@ -63,8 +70,16 @@ def list_deals(
         ram_gb=ram_gb,
         chip=chip,
         source=source,
+        screen_size=screen_size,
+        model_type=model_type,
     )
-    weights = ScoringWeights()
+    weights = ScoringWeights(
+        ram_multiplier=ram_multiplier,
+        ssd_multiplier=ssd_multiplier,
+        model_weight_air=model_weight_air,
+        model_weight_pro13=model_weight_pro13,
+        model_weight_pro14_16=model_weight_pro14_16,
+    )
     deals = [_attach_vfm(d, weights) for d in deals]
     deals.sort(key=lambda d: d.get("vfm_score") or 0, reverse=True)
     return {"count": len(deals), "deals": deals}

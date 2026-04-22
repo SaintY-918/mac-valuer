@@ -8,10 +8,10 @@ DEPRECIATION_RATE = 0.10
 
 
 class ScoringWeights(BaseModel):
-    ram_multiplier: float = 1.2     # applied when ram_gb >= 16
+    ram_multiplier: float = 1.25    # applied when ram_gb >= 16
     ssd_multiplier: float = 1.1     # applied when ssd_gb >= 1024 (1 TB+)
     model_weight_air: float = 1.0
-    model_weight_pro13: float = 1.05
+    model_weight_pro13: float = 1.0
     model_weight_pro14_16: float = 1.25
 
 

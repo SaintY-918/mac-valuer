@@ -7,3 +7,13 @@ valuation_report_*.csv
 .pytest_cache/
 .vscode/
 *.pyc
+
+# AI agent / editor tooling
+.agents/
+openspec/
+skills-lock.json
+
+# Temp / debug scripts
+list_models.py
+test_engine.py
+backup.bat

@@ -53,6 +53,10 @@ def run_valuation_pipeline():
             or not p_json.get("chip")
             or p_json.get("chip") == "None"
             or p_json.get("location") == "未知"
+            or not p_json.get("price")
+            or not p_json.get("ram_gb")
+            or not p_json.get("ssd_gb")
+            or not p_json.get("screen_size")
         )
 
         if not needs_fix:
@@ -80,10 +84,6 @@ def run_valuation_pipeline():
 
         if not res_dict.get("location") or res_dict.get("location") == "未知":
             res_dict["location"] = "未知"
-
-        res_dict.setdefault("release_year", 2020)
-        res_dict.setdefault("series", "Air")
-        res_dict.setdefault("screen_size", 13.3)
 
         db.save_deal(url, title, body, res_dict)
         time.sleep(1)
