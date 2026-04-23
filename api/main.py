@@ -1,6 +1,7 @@
 import logging
 from typing import Optional
 
+import numpy as np
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
 
@@ -24,6 +25,21 @@ class ScoreRequest(BaseModel):
 
 class ScoreResponse(BaseModel):
     vfm_score: float
+
+
+def _compute_thresholds(weights: ScoringWeights) -> dict:
+    db = DBManager()
+    all_deals = db.get_filtered_deals(status="available")
+    scores = [
+        s for d in all_deals
+        if (s := _attach_vfm(dict(d), weights).get("vfm_score")) and s > 0
+    ]
+    if not scores:
+        return {"p50": 250.0, "p75": 350.0}
+    return {
+        "p50": round(float(np.percentile(scores, 50)), 2),
+        "p75": round(float(np.percentile(scores, 75)), 2),
+    }
 
 
 def _attach_vfm(deal: dict, weights: ScoringWeights) -> dict:
@@ -82,7 +98,7 @@ def list_deals(
     )
     deals = [_attach_vfm(d, weights) for d in deals]
     deals.sort(key=lambda d: d.get("vfm_score") or 0, reverse=True)
-    return {"count": len(deals), "deals": deals}
+    return {"count": len(deals), "deals": deals, "vfm_thresholds": _compute_thresholds(weights)}
 
 
 @app.post("/api/score/calculate", response_model=ScoreResponse)

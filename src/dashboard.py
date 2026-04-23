@@ -65,7 +65,7 @@ def _vfm_badge(score: float, p75: float, p50: float) -> str:
 
 
 # ── Page config ────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="mac-valuer | 二手 MacBook 估價", page_icon="💻", layout="wide")
+st.set_page_config(page_title="mac-valuer | 二手 MacBook 估價", page_icon=":material/laptop:", layout="wide")
 
 st.markdown("""
 <style>
@@ -98,7 +98,7 @@ a.deal-link:hover { opacity: 0.82; }
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🔍 篩選條件")
+    st.markdown("## :material/search: 篩選條件")
 
     # 統一初始化所有預設值，避免 widget value 衝突
     if "min_price" not in st.session_state:
@@ -150,17 +150,17 @@ with st.sidebar:
             "w_pro13": 1.00, "w_pro14": 1.18, "w_pro16": 1.22,
         })
 
-    with st.expander("⚙️ VFM 評分設定"):
+    with st.expander(":material/tune: VFM 評分設定"):
         st.caption("調整各項規格加權，分數即時重算")
         ram_mult = st.slider("RAM 加權（≥ 16 GB）", min_value=1.0, max_value=2.0, step=0.05, key="ram_mult")
         ssd_mult = st.slider("SSD 加權（≥ 1 TB）", min_value=1.0, max_value=2.0, step=0.05, key="ssd_mult")
-        st.caption("💻 機型 × 螢幕組合加權")
+        st.caption(":material/laptop: 機型 × 螢幕組合加權")
         w_air13 = st.slider('Air 13"',  min_value=0.5, max_value=2.0, step=0.05, key="w_air13")
         w_air15 = st.slider('Air 15"',  min_value=0.5, max_value=2.0, step=0.05, key="w_air15")
         w_pro13 = st.slider('Pro 13"',  min_value=0.5, max_value=2.0, step=0.05, key="w_pro13")
         w_pro14 = st.slider('Pro 14"',  min_value=0.5, max_value=2.0, step=0.05, key="w_pro14")
         w_pro16 = st.slider('Pro 16"',  min_value=0.5, max_value=2.0, step=0.05, key="w_pro16")
-        st.button("↺ 重置評分設定", on_click=_reset_vfm_weights, use_container_width=True)
+        st.button(":material/restart_alt: 重置評分設定", on_click=_reset_vfm_weights, use_container_width=True)
 
     st.divider()
 
@@ -191,9 +191,13 @@ if model_type:         params["model_type"]  = model_type
 try:
     resp = requests.get(f"{API_BASE}/api/deals", params=params, timeout=10)
     resp.raise_for_status()
-    deals = resp.json().get("deals", [])
+    _resp_json = resp.json()
+    deals = _resp_json.get("deals", [])
+    _thresholds = _resp_json.get("vfm_thresholds", {"p75": 350.0, "p50": 250.0})
+    p75 = float(_thresholds["p75"])
+    p50 = float(_thresholds["p50"])
 except requests.exceptions.ConnectionError:
-    st.title("💻 二手 MacBook 智慧估價系統")
+    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
     st.error(f"無法連線到 API（{API_BASE}）。請先執行：`uvicorn api.main:app --reload --port 8000`")
     st.stop()
 except Exception as exc:
@@ -201,7 +205,7 @@ except Exception as exc:
     st.stop()
 
 if not deals:
-    st.title("💻 二手 MacBook 智慧估價系統")
+    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
     st.warning("找不到符合條件的物件。請調整篩選條件後重試。")
     st.stop()
 
@@ -216,27 +220,8 @@ weights = {
 df["vfm_score"] = df.apply(lambda r: _recalc_vfm(r.to_dict(), weights), axis=1)
 df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 
-# ── VFM 百分位數閾值：使用全庫資料，不受篩選影響 ─────────────────────────────
-@st.cache_data(ttl=300)
-def _fetch_all_scores(_weights_key: str, status: str) -> tuple:
-    try:
-        r = requests.get(f"{API_BASE}/api/deals", params={"status": status}, timeout=10)
-        r.raise_for_status()
-        all_deals = r.json().get("deals", [])
-        if not all_deals:
-            return 350.0, 250.0
-        all_df = pd.DataFrame(all_deals)
-        all_df["vfm_score"] = all_df.apply(lambda row: _recalc_vfm(row.to_dict(), weights), axis=1)
-        return float(all_df["vfm_score"].quantile(0.75)), float(all_df["vfm_score"].quantile(0.50))
-    except Exception:
-        return 350.0, 250.0
-
-_weights_key = "|".join(f"{k}={v}" for k, v in sorted(weights.items()))
-_status_key  = "sold" if show_sold else "available"
-p75, p50 = _fetch_all_scores(_weights_key, _status_key)
-
 # ── Header ─────────────────────────────────────────────────────────────────────
-st.title("💻 二手 MacBook 智慧估價系統")
+st.title(":material/laptop: 二手 MacBook 智慧估價系統")
 prices = df["price"].dropna().astype(float)
 
 m1, m2 = st.columns(2)
@@ -261,7 +246,7 @@ st.markdown("")
 
 
 # ── Score breakdown expander ───────────────────────────────────────────────────
-with st.expander("📊 VFM 分數構成 — 點此展開"):
+with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
     col_explain, col_chart = st.columns([1, 1])
 
     with col_explain:
@@ -375,13 +360,14 @@ st.dataframe(
     display_df,
     use_container_width=True,
     column_config={
-        "前往": st.column_config.LinkColumn(
-            "前往",
-            display_text="🔗 前往",
-            width="small",
-        ),
-        "價格 (TWD)": st.column_config.NumberColumn(format="%d"),
-        "電池健康":   st.column_config.NumberColumn(format="%d %%"),
+        "前往":       st.column_config.LinkColumn("前往", display_text="🔗 前往賣場", width="small"),
+        "標題":       st.column_config.TextColumn("標題", disabled=True),
+        "晶片":       st.column_config.TextColumn("晶片", disabled=True),
+        "地區":       st.column_config.TextColumn("地區", disabled=True),
+        "保固":       st.column_config.TextColumn("保固", disabled=True),
+        "成色":       st.column_config.TextColumn("成色", disabled=True),
+        "價格 (TWD)": st.column_config.NumberColumn("價格 (TWD)", format="%d"),
+        "電池健康":   st.column_config.NumberColumn("電池健康", format="%d%%"),
     },
     hide_index=True,
 )
@@ -404,26 +390,28 @@ def _page_range(current: int, total: int, window: int = 2) -> list:
 
 if max_pages > 1:
     page_slots = _page_range(current_page, max_pages)
-    btn_cols   = st.columns([1] * (len(page_slots) + 2))
+    pad = max(1, 8 - len(page_slots))
+    widths = [pad, 1] + [1] * len(page_slots) + [1, pad]
+    cols = st.columns(widths)
 
-    with btn_cols[0]:
-        if st.button("‹", disabled=(current_page <= 1), key="pg_prev"):
+    with cols[1]:
+        if st.button(":material/chevron_left:", disabled=(current_page <= 1), key="pg_prev", use_container_width=False):
             st.session_state["page_num"] = current_page - 1
             st.rerun()
 
     for i, slot in enumerate(page_slots):
-        with btn_cols[i + 1]:
+        with cols[2 + i]:
             if slot == "…":
                 st.markdown("<div style='text-align:center;line-height:2.4;color:#555'>…</div>",
                             unsafe_allow_html=True)
             else:
                 label = f"**{slot}**" if slot == current_page else str(slot)
-                if st.button(label, key=f"pg_{slot}"):
+                if st.button(label, key=f"pg_{slot}", use_container_width=False):
                     st.session_state["page_num"] = slot
                     st.rerun()
 
-    with btn_cols[-1]:
-        if st.button("›", disabled=(current_page >= max_pages), key="pg_next"):
+    with cols[2 + len(page_slots)]:
+        if st.button(":material/chevron_right:", disabled=(current_page >= max_pages), key="pg_next", use_container_width=False):
             st.session_state["page_num"] = current_page + 1
             st.rerun()
 

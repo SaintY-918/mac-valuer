@@ -1,6 +1,7 @@
 feedparser
 google-genai
 playwright
+camoufox
 streamlit
 pandas
 tabulate

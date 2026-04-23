@@ -12,6 +12,7 @@ from src.database.db_manager import DBManager
 from src.models.mac_spec import MacBookSpec
 from src.parser.llm_parser import extract_specs_from_text, parse_deal_llm
 from src.scrapers.ptt import PTTScraper
+from src.scrapers.shopee import ShopeeScraper
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -26,12 +27,20 @@ def force_extract_chip(title: str) -> str | None:
     return None
 
 
-def run_valuation_pipeline():
+def run_valuation_pipeline(source: str = "all"):
     db = DBManager()
 
-    print("=== Step 1: RSS Fetch ===")
-    scraper = PTTScraper()
-    raw_listings = asyncio.run(scraper.fetch_listings())
+    print(f"=== Step 1: Fetching from scrapers (source={source}) ===")
+    all_scrapers = {"ptt": PTTScraper(), "shopee": ShopeeScraper()}
+    scrapers = [all_scrapers[source]] if source != "all" else list(all_scrapers.values())
+    raw_listings = []
+    for scraper in scrapers:
+        try:
+            listings = asyncio.run(scraper.fetch_listings())
+            raw_listings.extend(listings)
+        except Exception as e:
+            logger.error("Scraper %s failed: %s", type(scraper).__name__, e)
+
     for listing in raw_listings:
         existing = db.get_cached_deal(listing.url)
         if not existing:
@@ -140,4 +149,8 @@ def run_valuation_pipeline():
 
 
 if __name__ == "__main__":
-    run_valuation_pipeline()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", choices=["ptt", "shopee", "all"], default="all")
+    args = parser.parse_args()
+    run_valuation_pipeline(source=args.source)
