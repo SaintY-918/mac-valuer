@@ -160,6 +160,13 @@ SCHEMA:
   "condition":       <string, e.g. "全新未拆" / "九成新" / "輕微使用痕跡" / "明顯使用痕跡"; only if explicit> | null
 }}
 
+SPEC HIERARCHY RULE:
+If TITLE contains " - " followed by a variation name (e.g. "M2 Max / 32GB / 1TB"),
+treat that variation name as the authoritative source for chip, ram_gb, and ssd_gb.
+It overrides any conflicting chip or memory information in the base title or body.
+If the variation name does not mention chip or memory, those fields are null —
+do NOT fall back to the base title for chip or memory.
+
 RULES:
 - price: must be a plain integer (no commas, no $ sign). Look for [售價] tag first.
 - ssd_gb: convert TB to GB (1T = 1024, 2T = 2048).

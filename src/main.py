@@ -27,7 +27,16 @@ def force_extract_chip(title: str) -> str | None:
     return None
 
 
-def run_valuation_pipeline(source: str = "all"):
+_INVALID_CHIPS = {"unknown", "none", ""}
+_INTEL_KEYWORDS = ("intel", "i5", "i7", "i9")
+
+
+def _is_invalid_chip(chip_val) -> bool:
+    v = str(chip_val or "").lower().strip()
+    return not v or v in _INVALID_CHIPS or any(k in v for k in _INTEL_KEYWORDS)
+
+
+def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
     db = DBManager()
 
     print(f"=== Step 1: Fetching from scrapers (source={source}) ===")
@@ -49,6 +58,14 @@ def run_valuation_pipeline(source: str = "all"):
         elif listing.status == "sold" and existing.get("status") != "sold":
             db.save_deal(listing.url, listing.title, listing.body_content,
                          status="sold", source=listing.source)
+
+    if dry_run:
+        print(f"\n=== DRY-RUN: {len(raw_listings)} listings survived scraper filters ===")
+        for lst in raw_listings:
+            m = re.search(r'售價為 (\d+) 元', lst.body_content or "")
+            price_str = m.group(1) if m else "N/A"
+            print(f"  [{lst.source}] {lst.title[:60]}  @  {price_str} TWD")
+        return
 
     print("\n=== Step 2: Database Repair & Hard Extraction ===")
     all_items = db.get_all_deals()
@@ -93,6 +110,10 @@ def run_valuation_pipeline(source: str = "all"):
 
         if not res_dict.get("location") or res_dict.get("location") == "未知":
             res_dict["location"] = "未知"
+
+        if _is_invalid_chip(res_dict.get("chip")):
+            logger.info("Chip filter: discarding '%s' (chip=%s)", title[:40], res_dict.get("chip"))
+            continue
 
         db.save_deal(url, title, body, res_dict)
         time.sleep(1)
@@ -152,5 +173,6 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", choices=["ptt", "shopee", "all"], default="all")
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    run_valuation_pipeline(source=args.source)
+    run_valuation_pipeline(source=args.source, dry_run=args.dry_run)

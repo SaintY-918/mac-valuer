@@ -123,15 +123,23 @@ class ShopeeScraper(BaseScraper):
                 ]
                 logger.info("L1 filter: %d / %d items passed", len(candidates), len(items))
 
+                shop_listing_count: dict[int, int] = {}
                 for item in candidates:
                     if self._current_calls >= self._max_calls:
                         logger.warning("MAX_LLM_CALLS_PER_RUN (%d) reached", self._max_calls)
                         break
-                    for lst in await self._fetch_item_details(context, item):
+                    shop_id = item.get("shopid")
+                    if shop_id and shop_listing_count.get(shop_id, 0) >= 3:
+                        logger.debug("Diversity Guard: shop %s capped, skipping item %s", shop_id, item.get("itemid"))
+                        continue
+                    item_listings = await self._fetch_item_details(context, item)
+                    for lst in item_listings:
                         results.append(lst)
                         self._current_calls += 1
                         if self._current_calls >= self._max_calls:
                             break
+                    if shop_id:
+                        shop_listing_count[shop_id] = shop_listing_count.get(shop_id, 0) + len(item_listings)
 
             except Exception as e:
                 logger.error("fetch_listings error: %s", e)
@@ -311,36 +319,33 @@ class ShopeeScraper(BaseScraper):
                             body_content=f"【系統自動標註：此商品售價為 {int(price)} 元】\n" + desc, source="shopee", status="available",
                         ))
                 else:
+                    survivors: list[dict] = []
                     for model in models:
-                        # Skip if status is not 1 (1 = normal, 0/2 = disabled/sold out)
-                        status = model.get("status", 1)
-                        if status != 1:
+                        # status: 1=normal, 0/2=disabled/sold-out
+                        if model.get("status", 1) != 1:
+                            continue
+                        # has_stock is the canonical availability boolean (trumps numeric stock)
+                        if model.get("has_stock") is not True:
+                            continue
+                        # is_grayout marks unavailable variant combinations in the UI
+                        if model.get("is_grayout") is True:
                             continue
 
-                        # Variant stock extraction
-                        stock_v2 = model.get("stock_info_v2", {}).get("summary", {}).get("current_stock")
-                        if stock_v2 is not None:
-                            stock = stock_v2
-                        else:
-                            stock = model.get("stock")
-                            if stock is None or stock == 0:
-                                stock = model.get("normal_stock")
-                                
-                        if stock is None or stock == 0:
+                        price_raw = model.get("price_info", {}).get("current_price")
+                        if price_raw is None or price_raw == 0:
+                            price_raw = model.get("price", 0) or 0
+                        if price_raw == 0:
                             continue
-                            
-                        price = model.get("price_info", {}).get("current_price")
-                        if price is None or price == 0:
-                            price = model.get("price", 0)
-                        price = price / 100000
-                            
-                        # 若 variant 內沒有價格，退回使用母商品的價格
-                        if price == 0:
-                            price = item_data.get("price_info", {}).get("current_price")
-                            if price is None or price == 0:
-                                price = item_data.get("price", 0)
-                            price = price / 100000
-                            
+
+                        survivors.append(model)
+
+                    # Diversity Guard: keep cheapest 5 variants per item
+                    survivors.sort(key=lambda m: m.get("price_info", {}).get("current_price") or m.get("price", 0) or 0)
+                    for model in survivors[:5]:
+                        price_raw = model.get("price_info", {}).get("current_price")
+                        if price_raw is None or price_raw == 0:
+                            price_raw = model.get("price", 0) or 0
+                        price = price_raw / 100000
                         model_id = model.get("modelid") or model.get("model_id")
                         model_name = model.get("name", "")
                         listings.append(RawListing(

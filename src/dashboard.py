@@ -39,17 +39,30 @@ def _form_key(row: dict) -> str:
     return "pro13"
 
 
+def _nan_safe(val, default):
+    """Return default when val is None, NaN, or falsy."""
+    import math
+    if val is None:
+        return default
+    try:
+        if math.isnan(float(val)):
+            return default
+    except (TypeError, ValueError):
+        pass
+    return val or default
+
+
 def _recalc_vfm(row: dict, w: dict) -> float:
-    price = float(row.get("price") or 0)
+    price = float(_nan_safe(row.get("price"), 0))
     if price <= 0:
         return 0.0
     chip  = str(row.get("chip") or "")
     base  = _BENCH.get(chip, 5000)
-    year  = int(row.get("release_year") or 2020)
+    year  = int(_nan_safe(row.get("release_year"), 2020))
     age   = max(0, datetime.date.today().year - year)
     depr  = 0.9 ** age
-    ram_m  = w["ram"] if (row.get("ram_gb") or 0) >= 16   else 1.0
-    ssd_m  = w["ssd"] if (row.get("ssd_gb") or 0) >= 1024 else 1.0
+    ram_m  = w["ram"] if _nan_safe(row.get("ram_gb"), 0) >= 16   else 1.0
+    ssd_m  = w["ssd"] if _nan_safe(row.get("ssd_gb"), 0) >= 1024 else 1.0
     form_m = w.get(_form_key(row), 1.0)
     return round(base * depr * ram_m * ssd_m * form_m / price * 1000, 2)
 
@@ -209,7 +222,12 @@ if not deals:
     st.warning("找不到符合條件的物件。請調整篩選條件後重試。")
     st.stop()
 
+all_sources = sorted({r.get("source", "") for r in deals if r.get("source")})
+
 df = pd.DataFrame(deals)
+if "source" not in df.columns:
+    df["source"] = ""
+df["source"] = df["source"].fillna("")
 
 # ── Recalculate VFM with user weights ─────────────────────────────────────────
 weights = {
@@ -232,6 +250,10 @@ with m2:
         "價格區間",
         f"{int(prices.min()):,} ~ {int(prices.max()):,} 元" if len(prices) else "-"
     )
+
+if len(all_sources) > 1:
+    selected_sources = st.multiselect("資料來源", all_sources, default=all_sources, key="source_filter")
+    df = df[df["source"].isin(selected_sources)] if selected_sources else df.iloc[0:0]
 
 # ── VFM 顏色圖例說明 ─────────────────────────────────────────────────────────
 st.markdown(f"""

@@ -74,6 +74,18 @@ class DBManager:
         source: str = "ptt",
     ):
         now = datetime.now(timezone.utc)
+
+        # Four-tuple dedup: skip write if (chip, ram_gb, ssd_gb, price) unchanged
+        if parsed_json is not None:
+            cached = self.get_cached_deal(url)
+            if cached and cached.get("parsed_json"):
+                old = cached["parsed_json"]
+                old_tuple = (old.get("chip"), old.get("ram_gb"), old.get("ssd_gb"), old.get("price"))
+                new_tuple = (parsed_json.get("chip"), parsed_json.get("ram_gb"),
+                             parsed_json.get("ssd_gb"), parsed_json.get("price"))
+                if old_tuple == new_tuple and None not in new_tuple:
+                    return
+
         try:
             with self.Session() as session:
                 existing = session.get(Deal, url)
