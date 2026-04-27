@@ -179,11 +179,27 @@ BODY:
 {clean_body}
 """
     try:
-        response = _client.models.generate_content(
-            model=_model_id,
-            contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
-        )
+        max_retries = 3
+        base_delay = 2
+        response = None
+        for attempt in range(max_retries):
+            try:
+                response = _client.models.generate_content(
+                    model=_model_id,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(response_mime_type="application/json"),
+                )
+                break
+            except Exception as e:
+                err_str = str(e)
+                if attempt < max_retries - 1 and ("503" in err_str or "429" in err_str or "unavailable" in err_str.lower()):
+                    import time
+                    logger.info("Model busy, retrying in %ds... (Attempt %d/%d) %s", base_delay, attempt + 1, max_retries, err_str)
+                    time.sleep(base_delay)
+                    base_delay *= 2
+                else:
+                    raise e
+                    
         json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
         if not json_match: return None
         item = json.loads(json_match.group(0))

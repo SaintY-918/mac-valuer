@@ -27,7 +27,7 @@ def force_extract_chip(title: str) -> str | None:
     return None
 
 
-_INVALID_CHIPS = {"unknown", "none", ""}
+_INVALID_CHIPS = {"unknown", "none", "null", "n/a", ""}
 _INTEL_KEYWORDS = ("intel", "i5", "i7", "i9")
 
 
@@ -44,11 +44,15 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
     scrapers = [all_scrapers[source]] if source != "all" else list(all_scrapers.values())
     raw_listings = []
     for scraper in scrapers:
+        src_name = "shopee" if isinstance(scraper, ShopeeScraper) else "ptt"
         try:
+            purged = db.delete_by_source(src_name)
+            logger.info("Pre-scrape purge: removed %d old '%s' records", purged, src_name)
             listings = asyncio.run(scraper.fetch_listings())
             raw_listings.extend(listings)
         except Exception as e:
             logger.error("Scraper %s failed: %s", type(scraper).__name__, e)
+
 
     for listing in raw_listings:
         existing = db.get_cached_deal(listing.url)
@@ -111,8 +115,9 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
         if not res_dict.get("location") or res_dict.get("location") == "未知":
             res_dict["location"] = "未知"
 
-        if _is_invalid_chip(res_dict.get("chip")):
-            logger.info("Chip filter: discarding '%s' (chip=%s)", title[:40], res_dict.get("chip"))
+        chip = res_dict.get("chip")
+        if chip is None or str(chip).strip().lower() in _INVALID_CHIPS:
+            logger.info("Chip filter: discarding '%s' (chip=%s)", title[:40], chip)
             continue
 
         db.save_deal(url, title, body, res_dict)
@@ -131,10 +136,18 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
     final_results = []
     for _, row in df.iterrows():
         try:
-            chip = str(row["chip"]) if row["chip"] else None
-            price = float(row["price"])
-            if price < 5000 or not chip or chip == "None":
+            chip_val = row.get("chip")
+            if pd.isna(chip_val) or not str(chip_val).strip() or str(chip_val).strip() == "None":
                 continue
+            chip = str(chip_val)
+
+            price = float(row["price"])
+            if price < 5000:
+                continue
+
+            series_val = row.get("series")
+            if pd.isna(series_val) or not str(series_val).strip():
+                series_val = "Air"
 
             spec_obj = MacBookSpec(
                 chip=chip,
@@ -142,7 +155,7 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
                 ssd_gb=int(row["ssd_gb"] or 256),
                 screen_size=float(row["screen_size"] or 13.3),
                 release_year=int(row["release_year"] or 2020),
-                series=row.get("series", "Air"),
+                series=str(series_val),
                 price=price,
                 location=str(row["location"]),
             )

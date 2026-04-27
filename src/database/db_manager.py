@@ -184,7 +184,20 @@ class DBManager:
             logger.error("DB filtered read error: %s", e)
             return []
 
+    def delete_by_source(self, source: str) -> int:
+        """Delete all deals from the given source. Returns number of rows deleted."""
+        try:
+            with self.Session() as session:
+                deleted = session.query(Deal).filter(Deal.source == source).delete()
+                session.commit()
+                logger.info("Purged %d stale records from source='%s'", deleted, source)
+                return deleted
+        except Exception as e:
+            logger.error("DB delete_by_source error (%s): %s", source, e)
+            return 0
+
     def get_all_parsed_deals(self) -> List[Dict]:
+
         """Returns deals that have been successfully parsed, with parsed_json expanded."""
         try:
             with self.Session() as session:

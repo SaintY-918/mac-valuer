@@ -22,11 +22,24 @@ _EXCLUDE_TITLES = ["殼", "膜", "零件機", "報廢", "充電線", "保護貼"
 _ITEM_URL_RE = re.compile(r"/product/(\d+)/(\d+)")
 
 
+def _extract_model_price(model: dict) -> int:
+    """Return the real checkout price (lowest priority: top-level `price` which
+    equals price_before_discount when a discount is active)."""
+    pi = model.get("price_info") or {}
+    # current_price is what the buyer actually pays
+    for key in ("current_price", "discounted_price"):
+        v = pi.get(key)
+        if v and v > 0:
+            return int(v)
+    # Fallback: top-level price — only correct when there is NO discount
+    return int(model.get("price") or 0)
+
+
 class ShopeeScraper(BaseScraper):
     def __init__(self):
         self._delay_min = float(os.getenv("SHOPEE_MIN_DELAY", "3"))
         self._delay_max = float(os.getenv("SHOPEE_MAX_DELAY", "8"))
-        self._max_calls = int(os.getenv("MAX_LLM_CALLS_PER_RUN", "30"))
+        self._max_calls = int(os.getenv("MAX_LLM_CALLS_PER_RUN", "100"))
         self._concurrency = int(os.getenv("SHOPEE_CONCURRENCY", "1"))
         self._sem = asyncio.Semaphore(self._concurrency)
         self._state_path = Path(os.getenv("SHOPEE_STATE_PATH", "shopee_state.json"))
@@ -87,9 +100,11 @@ class ShopeeScraper(BaseScraper):
 
             try:
                 page = await context.new_page()
-                items = await self._search_items(page)
 
-                if "login" in page.url or not items:
+                # Page 1: initial fetch + login check
+                items_p1 = await self._search_items(page, newest=0)
+
+                if "login" in page.url or not items_p1:
                     if self._headless:
                         logger.error(
                             "Login required but SHOPEE_HEADLESS=true — "
@@ -107,7 +122,14 @@ class ShopeeScraper(BaseScraper):
                     except EOFError:
                         logger.warning("Non-interactive terminal — waiting 60 s for login")
                         await asyncio.sleep(60)
-                    items = await self._search_items(page)
+                    items_p1 = await self._search_items(page, newest=0)
+
+                # Pages 2–3: same session, sequential navigation
+                all_items: list[dict] = list(items_p1)
+                for newest in (60, 120):
+                    await asyncio.sleep(random.uniform(3, 7))
+                    page_items = await self._search_items(page, newest=newest)
+                    all_items.extend(page_items)
 
                 await page.close()
 
@@ -115,13 +137,23 @@ class ShopeeScraper(BaseScraper):
                 await context.storage_state(path=str(self._state_path))
                 logger.info("Session state saved to %s", self._state_path)
 
+                # Dedup by (shopid, itemid) across pages
+                seen: set[tuple] = set()
+                unique_items: list[dict] = []
+                for item in all_items:
+                    key = (item.get("shopid"), item.get("itemid"))
+                    if key not in seen:
+                        seen.add(key)
+                        unique_items.append(item)
+                logger.info("Pagination: %d total items, %d unique after dedup", len(all_items), len(unique_items))
+
                 # L1 Gatekeeper: price range + title exclusion
                 candidates = [
-                    item for item in items
+                    item for item in unique_items
                     if 5000 <= item.get("price", 0) / 100000 <= 150000
                     and not any(w in item.get("name", "") for w in _EXCLUDE_TITLES)
                 ]
-                logger.info("L1 filter: %d / %d items passed", len(candidates), len(items))
+                logger.info("L1 filter: %d / %d items passed", len(candidates), len(unique_items))
 
                 shop_listing_count: dict[int, int] = {}
                 for item in candidates:
@@ -152,7 +184,7 @@ class ShopeeScraper(BaseScraper):
     # Search page: response interception + DOM fallback
     # ------------------------------------------------------------------
 
-    async def _search_items(self, page: Page) -> list[dict]:
+    async def _search_items(self, page: Page, newest: int = 0) -> list[dict]:
         intercepted: list[dict] = []
 
         async def handle_response(response):
@@ -167,9 +199,9 @@ class ShopeeScraper(BaseScraper):
 
         page.on("response", handle_response)
 
-        url = "https://shopee.tw/search?keyword=" + urllib.parse.quote("二手 MacBook")
+        url = "https://shopee.tw/search?keyword=" + urllib.parse.quote("二手 MacBook") + f"&newest={newest}"
         logger.info("Navigating to: %s", url)
-        await page.goto(url, wait_until="load", timeout=30000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(3)  # allow background API responses to fire
         try:
             await self._human_interact(page)
@@ -324,27 +356,31 @@ class ShopeeScraper(BaseScraper):
                         # status: 1=normal, 0/2=disabled/sold-out
                         if model.get("status", 1) != 1:
                             continue
-                        # has_stock is the canonical availability boolean (trumps numeric stock)
-                        if model.get("has_stock") is not True:
+                        # has_stock: use bool() to handle int 1/0 from API (not `is True`)
+                        if not bool(model.get("has_stock", False)):
                             continue
-                        # is_grayout marks unavailable variant combinations in the UI
-                        if model.get("is_grayout") is True:
+                        # is_grayout: same, use bool() to avoid int mismatch
+                        if bool(model.get("is_grayout", False)):
+                            continue
+                        # stock_info_v2 numeric guard
+                        stock_v2 = (
+                            model.get("stock_info_v2", {})
+                                .get("summary", {})
+                                .get("current_stock")
+                        )
+                        if stock_v2 is not None and stock_v2 <= 0:
                             continue
 
-                        price_raw = model.get("price_info", {}).get("current_price")
-                        if price_raw is None or price_raw == 0:
-                            price_raw = model.get("price", 0) or 0
+                        price_raw = _extract_model_price(model)
                         if price_raw == 0:
                             continue
 
                         survivors.append(model)
 
                     # Diversity Guard: keep cheapest 5 variants per item
-                    survivors.sort(key=lambda m: m.get("price_info", {}).get("current_price") or m.get("price", 0) or 0)
+                    survivors.sort(key=lambda m: _extract_model_price(m))
                     for model in survivors[:5]:
-                        price_raw = model.get("price_info", {}).get("current_price")
-                        if price_raw is None or price_raw == 0:
-                            price_raw = model.get("price", 0) or 0
+                        price_raw = _extract_model_price(model)
                         price = price_raw / 100000
                         model_id = model.get("modelid") or model.get("model_id")
                         model_name = model.get("name", "")

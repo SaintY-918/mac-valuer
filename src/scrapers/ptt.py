@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 _RSS_URL = "https://www.ptt.cc/atom/MacShop.xml"
 _M_CHIPS = ["m1", "m2", "m3", "m4"]
-_EXCLUDE_TITLES = ["[徵]", "[交換]", "intel", "i5", "i7", "i9", "2017", "2018"]
+_EXCLUDE_TITLES = ["徵", "[交換]", "intel", "i5", "i7", "i9", "2017", "2018"]
 _SOLD_KEYWORDS = ["售出", "已售出", "Sold", "sold", "已出"]
 
 

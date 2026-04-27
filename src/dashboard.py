@@ -119,6 +119,7 @@ with st.sidebar:
             "model_type": None, "chip_input": "", "ram_gb": None,
             "ssd_gb_filter": None, "screen_size": None,
             "min_price": 0, "max_price": 0, "show_sold": False,
+            "source_filter": ["ptt", "shopee"],
             "ram_mult": 1.25, "ssd_mult": 1.1,
             "w_air13": 1.00, "w_air15": 1.08,
             "w_pro13": 1.00, "w_pro14": 1.18, "w_pro16": 1.22,
@@ -152,6 +153,12 @@ with st.sidebar:
     )
     min_price = st.number_input("最低價格 (TWD)", min_value=0, step=1000, key="min_price")
     max_price = st.number_input("最高價格 (TWD)", min_value=0, step=1000, key="max_price")
+    source_filter = st.multiselect(
+        "賣場來源",
+        options=["ptt", "shopee"],
+        format_func=lambda x: "PTT MacShop" if x == "ptt" else "蝦皮",
+        key="source_filter",
+    )
     show_sold = st.checkbox("顯示已售出物件", key="show_sold")
 
     st.divider()
@@ -182,6 +189,7 @@ with st.sidebar:
             "model_type": None, "chip_input": "", "ram_gb": None,
             "ssd_gb_filter": None, "screen_size": None,
             "min_price": 0, "max_price": 0, "show_sold": False,
+            "source_filter": ["ptt", "shopee"],
             "ram_mult": 1.25, "ssd_mult": 1.1,
             "w_air13": 1.00, "w_air15": 1.08,
             "w_pro13": 1.00, "w_pro14": 1.18, "w_pro16": 1.22,
@@ -192,14 +200,18 @@ with st.sidebar:
     st.sidebar.caption(f"資料來源：PTT MacShop　｜　API：{API_BASE}")
 
 # ── Fetch ──────────────────────────────────────────────────────────────────────
+# 來源篩選：只有選了單一來源才傳給 API（SQL filter）
+# 若兩個都選（或都不選）就不傳，讓 API 回傳全部
+_selected_sources: list = source_filter or []
 params: dict = {"status": "sold" if show_sold else "available"}
-if chip_input:         params["chip"]        = chip_input
-if ram_gb:             params["ram_gb"]      = ram_gb
-if ssd_gb_filter:      params["ssd_gb"]      = ssd_gb_filter
-if screen_size_filter: params["screen_size"] = screen_size_filter
-if min_price > 0:      params["min_price"]   = min_price
-if max_price > 0:      params["max_price"]   = max_price
-if model_type:         params["model_type"]  = model_type
+if chip_input:                          params["chip"]        = chip_input
+if ram_gb:                              params["ram_gb"]      = ram_gb
+if ssd_gb_filter:                       params["ssd_gb"]      = ssd_gb_filter
+if screen_size_filter:                  params["screen_size"] = screen_size_filter
+if min_price > 0:                       params["min_price"]   = min_price
+if max_price > 0:                       params["max_price"]   = max_price
+if model_type:                          params["model_type"]  = model_type
+if len(_selected_sources) == 1:         params["source"]      = _selected_sources[0]
 
 try:
     resp = requests.get(f"{API_BASE}/api/deals", params=params, timeout=10)
@@ -222,12 +234,16 @@ if not deals:
     st.warning("找不到符合條件的物件。請調整篩選條件後重試。")
     st.stop()
 
-all_sources = sorted({r.get("source", "") for r in deals if r.get("source")})
-
 df = pd.DataFrame(deals)
 if "source" not in df.columns:
     df["source"] = ""
 df["source"] = df["source"].fillna("")
+
+# 若選了兩個來源，API 回傳全部，這裡做 client-side 過濾（空選=全不顯示）
+if _selected_sources and len(_selected_sources) < 2:
+    pass  # 已由 API source param 過濾
+elif len(_selected_sources) == 0:
+    df = df.iloc[0:0]  # 都不選 → 空結果
 
 # ── Recalculate VFM with user weights ─────────────────────────────────────────
 weights = {
@@ -250,10 +266,6 @@ with m2:
         "價格區間",
         f"{int(prices.min()):,} ~ {int(prices.max()):,} 元" if len(prices) else "-"
     )
-
-if len(all_sources) > 1:
-    selected_sources = st.multiselect("資料來源", all_sources, default=all_sources, key="source_filter")
-    df = df[df["source"].isin(selected_sources)] if selected_sources else df.iloc[0:0]
 
 # ── VFM 顏色圖例說明 ─────────────────────────────────────────────────────────
 st.markdown(f"""
