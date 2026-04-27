@@ -52,6 +52,8 @@ cp .env.example .env
 |------|------|
 | `GEMINI_API_KEY` | Google AI Studio 取得的 API Key |
 | `DATABASE_URL` | 本地開發保持預設即可；上雲端時改成 PostgreSQL 連線字串 |
+| `DISCORD_WEBHOOK_URL` | （選用）Discord 頻道 Webhook URL；若未設定則撿漏推播自動停用、pipeline 不報錯 |
+| `ALERT_VFM_THRESHOLD` | （選用）VFM 推播閾值，預設 `500`；只在 `vfm_score > threshold` 時觸發 Discord 推播 |
 
 ---
 

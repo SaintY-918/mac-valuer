@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, List
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, String, Text, DateTime, text
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
@@ -23,9 +23,11 @@ class Deal(Base):
     title = Column(Text)
     body_content = Column(Text)
     parsed_json = Column(Text)
-    status = Column(String, default="available")  # 'available' | 'sold'
-    first_seen = Column(DateTime)   # set on INSERT, never overwritten
-    updated_at = Column(DateTime)   # refreshed on every upsert
+    status = Column(String, default="available")  # 'available' | 'sold' | 'unavailable'
+    first_seen = Column(DateTime)        # set on INSERT, never overwritten
+    updated_at = Column(DateTime)        # refreshed when tracked fields actually change
+    last_seen = Column(DateTime)         # refreshed on every scrape sighting (even no field change)
+    last_alerted_price = Column(Integer) # last price for which a notifier alert was sent
 
 
 class DBManager:
@@ -39,10 +41,12 @@ class DBManager:
     def _migrate_db(self):
         """Add columns that didn't exist in pre-P1 databases (SQLite ALTER TABLE)."""
         new_columns = {
-            "source":     "ALTER TABLE deals ADD COLUMN source TEXT NOT NULL DEFAULT 'ptt'",
-            "status":     "ALTER TABLE deals ADD COLUMN status TEXT DEFAULT 'available'",
-            "first_seen": "ALTER TABLE deals ADD COLUMN first_seen TIMESTAMP",
-            "updated_at": "ALTER TABLE deals ADD COLUMN updated_at TIMESTAMP",
+            "source":             "ALTER TABLE deals ADD COLUMN source TEXT NOT NULL DEFAULT 'ptt'",
+            "status":             "ALTER TABLE deals ADD COLUMN status TEXT DEFAULT 'available'",
+            "first_seen":         "ALTER TABLE deals ADD COLUMN first_seen TIMESTAMP",
+            "updated_at":         "ALTER TABLE deals ADD COLUMN updated_at TIMESTAMP",
+            "last_seen":          "ALTER TABLE deals ADD COLUMN last_seen TIMESTAMP",
+            "last_alerted_price": "ALTER TABLE deals ADD COLUMN last_alerted_price INTEGER",
         }
         with self.engine.connect() as conn:
             existing = {row[1] for row in conn.execute(text("PRAGMA table_info(deals)"))}
@@ -75,7 +79,9 @@ class DBManager:
     ):
         now = datetime.now(timezone.utc)
 
-        # Four-tuple dedup: skip write if (chip, ram_gb, ssd_gb, price) unchanged
+        # Four-tuple dedup: skip heavy field writes if (chip, ram_gb, ssd_gb, price) unchanged.
+        # We still refresh last_seen below so sweep / freshness reporting stays accurate.
+        skip_field_update = False
         if parsed_json is not None:
             cached = self.get_cached_deal(url)
             if cached and cached.get("parsed_json"):
@@ -84,18 +90,20 @@ class DBManager:
                 new_tuple = (parsed_json.get("chip"), parsed_json.get("ram_gb"),
                              parsed_json.get("ssd_gb"), parsed_json.get("price"))
                 if old_tuple == new_tuple and None not in new_tuple:
-                    return
+                    skip_field_update = True
 
         try:
             with self.Session() as session:
                 existing = session.get(Deal, url)
                 if existing:
-                    existing.title = title
-                    existing.body_content = body_content
-                    if parsed_json is not None:
-                        existing.parsed_json = json.dumps(parsed_json, ensure_ascii=False)
-                    existing.status = status
-                    existing.updated_at = now
+                    if not skip_field_update:
+                        existing.title = title
+                        existing.body_content = body_content
+                        if parsed_json is not None:
+                            existing.parsed_json = json.dumps(parsed_json, ensure_ascii=False)
+                        existing.status = status
+                        existing.updated_at = now
+                    existing.last_seen = now
                     # first_seen is intentionally NOT touched
                 else:
                     session.add(Deal(
@@ -107,10 +115,71 @@ class DBManager:
                         status=status,
                         first_seen=now,
                         updated_at=now,
+                        last_seen=now,
                     ))
                 session.commit()
         except Exception as e:
             logger.error("DB write error for %s: %s", url, e)
+
+    def update_last_alerted_price(self, url: str, price: int) -> bool:
+        """Persist the price at which a notifier alert was just sent."""
+        try:
+            with self.Session() as session:
+                deal = session.get(Deal, url)
+                if not deal:
+                    return False
+                deal.last_alerted_price = int(price)
+                session.commit()
+                return True
+        except Exception as e:
+            logger.error("DB update_last_alerted_price error for %s: %s", url, e)
+            return False
+
+    def get_alert_state(self, url: str) -> Optional[Dict]:
+        """Return {'price': int|None, 'last_alerted_price': int|None} for the given URL."""
+        try:
+            with self.Session() as session:
+                deal = session.get(Deal, url)
+                if not deal:
+                    return None
+                parsed = json.loads(deal.parsed_json) if deal.parsed_json else {}
+                return {
+                    "price": parsed.get("price"),
+                    "last_alerted_price": deal.last_alerted_price,
+                }
+        except Exception as e:
+            logger.error("DB get_alert_state error for %s: %s", url, e)
+            return None
+
+    def sweep_missing(self, source: str, current_urls, min_threshold: int = 5) -> int:
+        """Mark `available` rows of the given source whose URL is NOT in current_urls as `unavailable`.
+
+        Returns the number of rows updated. Skips (returns 0) when len(current_urls) < min_threshold
+        to protect against scraper-failure scenarios. Does not touch rows already in 'sold' or
+        'unavailable' status, and does not touch other sources.
+        """
+        url_set = set(current_urls or [])
+        if len(url_set) < min_threshold:
+            logger.warning(
+                "Sweep skipped for source='%s': only %d URLs in current run (< threshold %d)",
+                source, len(url_set), min_threshold,
+            )
+            return 0
+        try:
+            with self.Session() as session:
+                rows = (
+                    session.query(Deal)
+                    .filter(Deal.source == source, Deal.status == "available")
+                    .all()
+                )
+                missing = [r for r in rows if r.url not in url_set]
+                for r in missing:
+                    r.status = "unavailable"
+                session.commit()
+                return len(missing)
+        except Exception as e:
+            logger.error("DB sweep_missing error (source=%s): %s", source, e)
+            return 0
 
     def get_all_deals(self) -> List[Dict]:
         """Returns all deals as raw dicts (parsed_json kept as JSON string)."""
@@ -184,18 +253,6 @@ class DBManager:
             logger.error("DB filtered read error: %s", e)
             return []
 
-    def delete_by_source(self, source: str) -> int:
-        """Delete all deals from the given source. Returns number of rows deleted."""
-        try:
-            with self.Session() as session:
-                deleted = session.query(Deal).filter(Deal.source == source).delete()
-                session.commit()
-                logger.info("Purged %d stale records from source='%s'", deleted, source)
-                return deleted
-        except Exception as e:
-            logger.error("DB delete_by_source error (%s): %s", source, e)
-            return 0
-
     def get_all_parsed_deals(self) -> List[Dict]:
 
         """Returns deals that have been successfully parsed, with parsed_json expanded."""
@@ -208,6 +265,7 @@ class DBManager:
                     item["original_title"] = d.title
                     item["url"] = d.url
                     item["status"] = d.status
+                    item["source"] = d.source
                     result.append(item)
                 return result
         except Exception as e:

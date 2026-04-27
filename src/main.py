@@ -1,8 +1,10 @@
 import asyncio
 import logging
 import json
+import os
 import re
 import time
+from collections import defaultdict
 
 import pandas as pd
 from tabulate import tabulate
@@ -10,9 +12,13 @@ from tabulate import tabulate
 from src.calculator.score_engine import get_vfm_score
 from src.database.db_manager import DBManager
 from src.models.mac_spec import MacBookSpec
+from src.notifier import send_alert
 from src.parser.llm_parser import extract_specs_from_text, parse_deal_llm
 from src.scrapers.ptt import PTTScraper
 from src.scrapers.shopee import ShopeeScraper
+
+DEFAULT_ALERT_VFM_THRESHOLD = 500.0
+SWEEP_MIN_THRESHOLD = 5
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -36,6 +42,18 @@ def _is_invalid_chip(chip_val) -> bool:
     return not v or v in _INVALID_CHIPS or any(k in v for k in _INTEL_KEYWORDS)
 
 
+def _read_alert_threshold() -> float:
+    raw = os.getenv("ALERT_VFM_THRESHOLD")
+    if raw is None or raw.strip() == "":
+        return DEFAULT_ALERT_VFM_THRESHOLD
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("ALERT_VFM_THRESHOLD=%r is not a number; using default %s",
+                       raw, DEFAULT_ALERT_VFM_THRESHOLD)
+        return DEFAULT_ALERT_VFM_THRESHOLD
+
+
 def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
     db = DBManager()
 
@@ -43,13 +61,17 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
     all_scrapers = {"ptt": PTTScraper(), "shopee": ShopeeScraper()}
     scrapers = [all_scrapers[source]] if source != "all" else list(all_scrapers.values())
     raw_listings = []
+    urls_seen_by_source: dict[str, set[str]] = defaultdict(set)
+    sources_attempted: set[str] = set()
     for scraper in scrapers:
         src_name = "shopee" if isinstance(scraper, ShopeeScraper) else "ptt"
+        sources_attempted.add(src_name)
         try:
-            purged = db.delete_by_source(src_name)
-            logger.info("Pre-scrape purge: removed %d old '%s' records", purged, src_name)
             listings = asyncio.run(scraper.fetch_listings())
             raw_listings.extend(listings)
+            for lst in listings:
+                if lst and lst.url:
+                    urls_seen_by_source[src_name].add(lst.url)
         except Exception as e:
             logger.error("Scraper %s failed: %s", type(scraper).__name__, e)
 
@@ -171,15 +193,65 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
                 "Price": f"{int(price):,}",
                 "Region": str(row["location"]),
                 "VFM Score": round(score, 2),
+                "_url": row["url"],
+                "_source": row.get("source") or "?",
+                "_raw_title": row["original_title"],
+                "_raw_price": int(price),
+                "_raw_score": float(score),
             })
         except Exception as e:
             logger.warning("Scoring error for '%s': %s", row.get("original_title", "?")[:30], e)
             continue
 
     final_results.sort(key=lambda x: x["VFM Score"], reverse=True)
-    pd.DataFrame(final_results).to_csv("valuation_report.csv", index=False, encoding="utf-8-sig")
-    print(tabulate(final_results[:15], headers="keys", tablefmt="fancy_grid"))
-    print(f"\nDone. Total items in report: {len(final_results)}")
+
+    # Step 5: Notifier — alert on high-VFM listings whose price changed since last alert.
+    try:
+        _run_notifier(db, final_results)
+    except Exception as e:
+        logger.error("Notifier step failed (non-fatal): %s", e)
+
+    # Step 6: Sweep — mark URLs that disappeared from this run as 'unavailable'.
+    for src_name in sources_attempted:
+        seen = urls_seen_by_source.get(src_name, set())
+        n = db.sweep_missing(src_name, seen, min_threshold=SWEEP_MIN_THRESHOLD)
+        logger.info("Sweep result: source='%s' marked_unavailable=%d (saw %d urls)",
+                    src_name, n, len(seen))
+
+    # Strip private fields before writing the public CSV report.
+    public_results = [{k: v for k, v in r.items() if not k.startswith("_")} for r in final_results]
+    pd.DataFrame(public_results).to_csv("valuation_report.csv", index=False, encoding="utf-8-sig")
+    print(tabulate(public_results[:15], headers="keys", tablefmt="fancy_grid"))
+    print(f"\nDone. Total items in report: {len(public_results)}")
+
+
+def _run_notifier(db: DBManager, final_results: list[dict]) -> None:
+    threshold = _read_alert_threshold()
+    sent = 0
+    for row in final_results:
+        score = row.get("_raw_score")
+        if score is None or score <= threshold:
+            continue
+        url = row.get("_url")
+        price = row.get("_raw_price")
+        if not url or price is None:
+            continue
+        state = db.get_alert_state(url)
+        last_alerted = state.get("last_alerted_price") if state else None
+        if last_alerted is not None and int(last_alerted) == int(price):
+            continue
+        ok = send_alert({
+            "source": row.get("_source"),
+            "title": row.get("_raw_title"),
+            "price": price,
+            "vfm_score": score,
+            "url": url,
+        })
+        if ok:
+            db.update_last_alerted_price(url, price)
+            sent += 1
+    if sent:
+        logger.info("Notifier: sent %d Discord alert(s) above threshold %.0f", sent, threshold)
 
 
 if __name__ == "__main__":
