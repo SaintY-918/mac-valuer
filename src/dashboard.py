@@ -284,26 +284,36 @@ df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.title(":material/laptop: 二手 MacBook 智慧估價系統")
 prices = df["price"].dropna().astype(float)
-
-m1, m2 = st.columns(2)
-with m1:
-    st.metric("符合物件", f"{len(df)} 筆")
-with m2:
-    st.metric(
-        "價格區間",
-        f"{int(prices.min()):,} ~ {int(prices.max()):,} 元" if len(prices) else "-"
-    )
-
-# ── VFM 顏色圖例說明 ─────────────────────────────────────────────────────────
+_new_count = _get_db().get_new_count()
+_price_range = (
+    f"{int(prices.min()):,} ~ {int(prices.max()):,} 元" if len(prices) else "—"
+)
 st.markdown(f"""
-<div style="display:flex;gap:20px;align-items:center;padding:8px 0 4px;font-size:0.88rem;color:#94a3b8;">
-  <span>VFM 分數說明：</span>
-  <span>🟢 <b>優秀</b>（前 25%，≥ {p75:.1f} 分）</span>
-  <span>🟡 <b>普通</b>（前 50%，≥ {p50:.1f} 分）</span>
+<div style="display:flex;flex-wrap:wrap;gap:12px;margin:8px 0 12px;">
+  <div style="background:#1e1e2e;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
+    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">符合物件</div>
+    <div style="font-size:1.4rem;font-weight:700;">{len(df)} 筆</div>
+  </div>
+  <div style="background:#1e1e2e;border-radius:10px;padding:10px 18px;flex:2;min-width:160px;">
+    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">價格區間</div>
+    <div style="font-size:1.1rem;font-weight:700;">{_price_range}</div>
+  </div>
+  <div style="background:#1e1e2e;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
+    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">最近新增</div>
+    <div style="font-size:1.4rem;font-weight:700;">+{_new_count} 筆</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── 性價比圖例 ───────────────────────────────────────────────────────────────
+st.markdown("""
+<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:4px 0 8px;font-size:0.85rem;color:#94a3b8;">
+  <span style="font-weight:600;color:#cbd5e1;">性價比</span>
+  <span>🟢 <b>優秀</b>（前 25%）</span>
+  <span>🟡 <b>普通</b>（前 50%）</span>
   <span>🔴 <b>偏貴</b>（後 50%）</span>
 </div>
 """, unsafe_allow_html=True)
-st.markdown("")
 
 
 # ── Score breakdown expander ───────────────────────────────────────────────────
@@ -375,24 +385,20 @@ with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
 
 st.markdown("")
 
-# ── Table header + page size ────────────────────────────────────────────────────
+# ── Table header ───────────────────────────────────────────────────────────────
+PAGE_SIZE = 20
+
 if "page_num" not in st.session_state:
     st.session_state["page_num"] = 1
 
-hcol, pcol = st.columns([5, 1])
-with hcol:
-    st.subheader(f"完整列表（{len(df)} 筆）")
-with pcol:
-    page_size = st.selectbox("每頁顯示", [10, 20, 50], key="page_size")
-
-max_pages = max(1, (len(df) + page_size - 1) // page_size)
+max_pages = max(1, (len(df) + PAGE_SIZE - 1) // PAGE_SIZE)
 current_page = int(st.session_state.get("page_num", 1))
 current_page = max(1, min(current_page, max_pages))
 
 
 # ── Data table ─────────────────────────────────────────────────────────────────
-start = (current_page - 1) * page_size
-paginated = df.iloc[start: start + page_size].copy()
+start = (current_page - 1) * PAGE_SIZE
+paginated = df.iloc[start: start + PAGE_SIZE].copy()
 
 paginated["CP 值"] = paginated["vfm_score"].apply(lambda s: _vfm_badge(s, p75, p50))
 
@@ -419,7 +425,7 @@ st.dataframe(
     display_df,
     use_container_width=True,
     column_config={
-        "前往":       st.column_config.LinkColumn("前往", display_text="🔗 前往賣場", width="small"),
+        "前往":       st.column_config.LinkColumn("前往", display_text="🔗", width="small"),
         "標題":       st.column_config.TextColumn("標題", disabled=True),
         "晶片":       st.column_config.TextColumn("晶片", disabled=True),
         "地區":       st.column_config.TextColumn("地區", disabled=True),
@@ -434,44 +440,19 @@ st.dataframe(
 # ── Pagination ─────────────────────────────────────────────────────────────────
 st.markdown("")
 
-def _page_range(current: int, total: int, window: int = 2) -> list:
-    pages: list = [1]
-    lo = max(2, current - window)
-    hi = min(total - 1, current + window)
-    if lo > 2:
-        pages.append("…")
-    pages.extend(range(lo, hi + 1))
-    if hi < total - 1:
-        pages.append("…")
-    if total > 1:
-        pages.append(total)
-    return pages
-
 if max_pages > 1:
-    page_slots = _page_range(current_page, max_pages)
-    pad = max(1, 8 - len(page_slots))
-    widths = [pad, 1] + [1] * len(page_slots) + [1, pad]
-    cols = st.columns(widths)
-
-    with cols[1]:
-        if st.button(":material/chevron_left:", disabled=(current_page <= 1), key="pg_prev", use_container_width=False):
+    prev_col, info_col, next_col = st.columns([1, 3, 1])
+    with prev_col:
+        if st.button("←", disabled=(current_page <= 1), key="pg_prev", use_container_width=True):
             st.session_state["page_num"] = current_page - 1
             st.rerun()
-
-    for i, slot in enumerate(page_slots):
-        with cols[2 + i]:
-            if slot == "…":
-                st.markdown("<div style='text-align:center;line-height:2.4;color:#555'>…</div>",
-                            unsafe_allow_html=True)
-            else:
-                label = f"**{slot}**" if slot == current_page else str(slot)
-                if st.button(label, key=f"pg_{slot}", use_container_width=False):
-                    st.session_state["page_num"] = slot
-                    st.rerun()
-
-    with cols[2 + len(page_slots)]:
-        if st.button(":material/chevron_right:", disabled=(current_page >= max_pages), key="pg_next", use_container_width=False):
+    with info_col:
+        st.markdown(
+            f"<div style='text-align:center;padding-top:6px;color:#94a3b8;'>"
+            f"第 {current_page} / {max_pages} 頁　·　共 {len(df)} 筆</div>",
+            unsafe_allow_html=True,
+        )
+    with next_col:
+        if st.button("→", disabled=(current_page >= max_pages), key="pg_next", use_container_width=True):
             st.session_state["page_num"] = current_page + 1
             st.rerun()
-
-st.caption(f"第 {current_page} 頁，共 {max_pages} 頁　｜　{len(df)} 筆物件")

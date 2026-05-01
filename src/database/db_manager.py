@@ -281,6 +281,17 @@ class DBManager:
             return []
 
 
+    def get_new_count(self) -> int:
+        """Return count of deals first seen in the last 24 hours."""
+        try:
+            from datetime import timedelta
+            with self.Session() as session:
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+                return session.query(Deal).filter(Deal.first_seen >= cutoff).count()
+        except Exception as e:
+            logger.error("DB get_new_count error: %s", e)
+            return 0
+
     def get_last_seen(self) -> Optional[datetime]:
         """Return the most recent last_seen timestamp across all rows, or None if empty."""
         try:
