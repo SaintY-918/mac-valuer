@@ -248,7 +248,7 @@ try:
     # All available deals (unfiltered) for p75/p50 baseline
     all_available = db.get_filtered_deals(status="available")
 except Exception as exc:
-    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+    st.markdown("<h1 style='line-height:1.25'>💻 二手 MacBook<br>智慧估價系統</h1>", unsafe_allow_html=True)
     st.error(
         f"資料庫連線失敗：{exc}\n\n"
         "請確認 `DATABASE_URL` 環境變數已正確設定（本地開發於 `.env`；"
@@ -262,7 +262,7 @@ p75 = float(np.percentile(_all_scores, 75)) if _all_scores else 350.0
 p50 = float(np.percentile(_all_scores, 50)) if _all_scores else 250.0
 
 if not deals:
-    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+    st.markdown("<h1 style='line-height:1.25'>💻 二手 MacBook<br>智慧估價系統</h1>", unsafe_allow_html=True)
     st.warning("找不到符合條件的物件。請調整篩選條件後重試。")
     st.stop()
 
@@ -273,7 +273,7 @@ df["source"] = df["source"].fillna("")
 
 # Client-side source filter (both/none selected)
 if len(_selected_sources) == 0:
-    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+    st.markdown("<h1 style='line-height:1.25'>💻 二手 MacBook<br>智慧估價系統</h1>", unsafe_allow_html=True)
     st.warning("請至少選擇一個賣場來源（PTT 或 蝦皮）。")
     st.stop()
 
@@ -282,7 +282,7 @@ df["vfm_score"] = df.apply(lambda r: _recalc_vfm(r.to_dict(), weights), axis=1)
 df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 
 # ── Header ─────────────────────────────────────────────────────────────────────
-st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+st.markdown("<h1 style='line-height:1.25'>💻 二手 MacBook<br>智慧估價系統</h1>", unsafe_allow_html=True)
 prices = df["price"].dropna().astype(float)
 try:
     _new_count = _get_db().get_new_count()
@@ -443,19 +443,28 @@ st.dataframe(
 # ── Pagination ─────────────────────────────────────────────────────────────────
 st.markdown("")
 
-if max_pages > 1:
-    prev_col, info_col, next_col = st.columns([1, 3, 1])
-    with prev_col:
-        if st.button("←", disabled=(current_page <= 1), key="pg_prev", use_container_width=True):
-            st.session_state["page_num"] = current_page - 1
-            st.rerun()
-    with info_col:
-        st.markdown(
-            f"<div style='text-align:center;padding-top:6px;color:#94a3b8;'>"
-            f"第 {current_page} / {max_pages} 頁　·　共 {len(df)} 筆</div>",
-            unsafe_allow_html=True,
-        )
-    with next_col:
-        if st.button("→", disabled=(current_page >= max_pages), key="pg_next", use_container_width=True):
-            st.session_state["page_num"] = current_page + 1
-            st.rerun()
+prev_col, mid_col, next_col = st.columns([2, 3, 2])
+with prev_col:
+    if st.button("← 上一頁", disabled=(current_page <= 1), key="pg_prev", use_container_width=True):
+        st.session_state["page_num"] = current_page - 1
+        st.rerun()
+with mid_col:
+    selected_page = st.selectbox(
+        "頁數",
+        options=list(range(1, max_pages + 1)),
+        index=current_page - 1,
+        label_visibility="collapsed",
+        key="pg_select",
+        format_func=lambda p: f"第 {p} / {max_pages} 頁",
+    )
+    if selected_page != current_page:
+        st.session_state["page_num"] = selected_page
+        st.rerun()
+with next_col:
+    if st.button("下一頁 →", disabled=(current_page >= max_pages), key="pg_next", use_container_width=True):
+        st.session_state["page_num"] = current_page + 1
+        st.rerun()
+st.markdown(
+    f"<div style='text-align:center;padding:4px 0;color:#94a3b8;font-size:0.8rem;'>共 {len(df)} 筆</div>",
+    unsafe_allow_html=True,
+)
