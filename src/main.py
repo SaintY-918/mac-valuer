@@ -267,6 +267,7 @@ def _run_notifier(db: DBManager, final_results: list[dict]) -> int:
             sent += 1
     if sent:
         logger.info("Notifier: sent %d Discord alert(s) above threshold %.0f", sent, threshold)
+    return sent
 
 
 if __name__ == "__main__":
