@@ -31,4 +31,5 @@ jobs:
           GEMINI_API_KEY:        ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
           ALERT_VFM_THRESHOLD:   ${{ secrets.ALERT_VFM_THRESHOLD }}
+          SHOPEE_HEADLESS:       "true"
         run: python -m src.main
