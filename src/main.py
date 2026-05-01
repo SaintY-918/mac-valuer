@@ -12,7 +12,7 @@ from tabulate import tabulate
 from src.calculator.score_engine import get_vfm_score
 from src.database.db_manager import DBManager
 from src.models.mac_spec import MacBookSpec
-from src.notifier import send_alert
+from src.notifier import send_alert, send_heartbeat
 from src.parser.llm_parser import extract_specs_from_text, parse_deal_llm
 from src.scrapers.ptt import PTTScraper
 from src.scrapers.shopee import ShopeeScraper
@@ -63,6 +63,7 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
     raw_listings = []
     urls_seen_by_source: dict[str, set[str]] = defaultdict(set)
     sources_attempted: set[str] = set()
+    upsert_counts: dict[str, int] = defaultdict(int)
     for scraper in scrapers:
         src_name = "shopee" if isinstance(scraper, ShopeeScraper) else "ptt"
         sources_attempted.add(src_name)
@@ -75,15 +76,17 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
         except Exception as e:
             logger.error("Scraper %s failed: %s", type(scraper).__name__, e)
 
-
     for listing in raw_listings:
+        src = listing.source or "ptt"
         existing = db.get_cached_deal(listing.url)
         if not existing:
             db.save_deal(listing.url, listing.title, listing.body_content,
                          status=listing.status, source=listing.source)
+            upsert_counts[src] += 1
         elif listing.status == "sold" and existing.get("status") != "sold":
             db.save_deal(listing.url, listing.title, listing.body_content,
                          status="sold", source=listing.source)
+            upsert_counts[src] += 1
 
     if dry_run:
         print(f"\n=== DRY-RUN: {len(raw_listings)} listings survived scraper filters ===")
@@ -206,8 +209,9 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
     final_results.sort(key=lambda x: x["VFM Score"], reverse=True)
 
     # Step 5: Notifier — alert on high-VFM listings whose price changed since last alert.
+    alerts_sent = 0
     try:
-        _run_notifier(db, final_results)
+        alerts_sent = _run_notifier(db, final_results)
     except Exception as e:
         logger.error("Notifier step failed (non-fatal): %s", e)
 
@@ -218,6 +222,16 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
         logger.info("Sweep result: source='%s' marked_unavailable=%d (saw %d urls)",
                     src_name, n, len(seen))
 
+    # Step 7: Heartbeat — send daily run summary to Discord.
+    try:
+        send_heartbeat({
+            "ptt": upsert_counts.get("ptt", 0),
+            "shopee": upsert_counts.get("shopee", 0),
+            "alerts_sent": alerts_sent,
+        })
+    except Exception as e:
+        logger.error("Heartbeat step failed (non-fatal): %s", e)
+
     # Strip private fields before writing the public CSV report.
     public_results = [{k: v for k, v in r.items() if not k.startswith("_")} for r in final_results]
     pd.DataFrame(public_results).to_csv("valuation_report.csv", index=False, encoding="utf-8-sig")
@@ -225,7 +239,8 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
     print(f"\nDone. Total items in report: {len(public_results)}")
 
 
-def _run_notifier(db: DBManager, final_results: list[dict]) -> None:
+def _run_notifier(db: DBManager, final_results: list[dict]) -> int:
+    """Return the number of Discord alerts successfully sent this run."""
     threshold = _read_alert_threshold()
     sent = 0
     for row in final_results:

@@ -31,6 +31,30 @@ def _format_message(deal: Dict) -> str:
     )
 
 
+def send_heartbeat(stats: dict) -> None:
+    """Send a daily pipeline summary to Discord. Silent no-op if webhook URL is unset."""
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+    if not webhook_url:
+        return
+
+    ptt_count = stats.get("ptt", 0)
+    shopee_count = stats.get("shopee", 0)
+    alerts_sent = stats.get("alerts_sent", 0)
+
+    content = (
+        "✅ **每日爬蟲巡邏完畢**\n"
+        f"- PTT：新增/更新 **{ptt_count}** 筆\n"
+        f"- Shopee：新增/更新 **{shopee_count}** 筆\n"
+        f"- 觸發警報：**{alerts_sent}** 筆"
+    )
+    try:
+        resp = requests.post(webhook_url, json={"content": content}, timeout=HTTP_TIMEOUT_SECONDS)
+        if not (200 <= resp.status_code < 300):
+            logger.warning("Heartbeat non-2xx: status=%d", resp.status_code)
+    except requests.RequestException as e:
+        logger.warning("Heartbeat request failed: %s", e)
+
+
 def send_alert(deal: Dict) -> bool:
     """Send a Discord webhook alert for a single deal.
 

@@ -57,7 +57,41 @@ cp .env.example .env
 
 ---
 
-## 執行指令
+## 零成本雲端部署（P7）
+
+```
+GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
+  └─ python -m src.main
+       └─ 寫入 ──► Neon PostgreSQL (免費 0.5 GB, sslmode=require)
+                              ▲
+              Streamlit Community Cloud (免費, 公開)
+              直連 DBManager.get_filtered_deals()
+```
+
+### 部署步驟
+
+1. **Neon PostgreSQL**：在 [neon.tech](https://neon.tech) 建立免費 project，取得連線字串（格式：`postgresql+psycopg2://user:pass@host.neon.tech/dbname?sslmode=require`）。首次本地執行 `DATABASE_URL=<neon_url> python -m src.main` 以自動建表。
+
+2. **GitHub Secrets**（`Settings → Secrets → Actions`）：
+
+   | Secret 名稱 | 內容 |
+   |---|---|
+   | `DATABASE_URL` | Neon 連線字串 |
+   | `GEMINI_API_KEY` | Google AI Studio Key |
+   | `DISCORD_WEBHOOK_URL` | Discord Webhook URL（選用） |
+   | `ALERT_VFM_THRESHOLD` | VFM 推播閾值，預設 500（選用） |
+
+3. **GitHub Actions**：push `.github/workflows/scraper.yml` 後自動啟用。可到 Actions 頁面手動 dispatch 測試。每天執行完畢後 Discord 會收到「每日巡邏完畢」heartbeat 通知。
+
+4. **Streamlit Community Cloud**：連結 GitHub repo → Main file path 設為 `streamlit_app.py` → Secrets 貼入：
+   ```toml
+   DATABASE_URL = "postgresql+psycopg2://...?sslmode=require"
+   ```
+   Dashboard sidebar 會顯示「🔄 資料庫最後更新時間」確認資料新鮮度。
+
+---
+
+## 執行指令（本地開發）
 
 ### 手動跑一次完整爬蟲 + 估價
 
@@ -67,13 +101,15 @@ python -m src.main
 
 執行完畢後會在根目錄產生 `valuation_report.csv`，並在終端機印出前 15 名高 VFM 機器。
 
-### 啟動 Streamlit Dashboard（目前版本）
+### 啟動 Streamlit Dashboard
 
 ```bash
 streamlit run src/dashboard.py
 ```
 
-### 啟動 FastAPI 伺服器（P3 完成後可用）
+Dashboard 直連 `DATABASE_URL` 指定的資料庫（本地 SQLite 或 Neon PostgreSQL）。
+
+### 啟動 FastAPI 伺服器（本地開發用）
 
 ```bash
 uvicorn api.main:app --reload --port 8000
@@ -81,7 +117,15 @@ uvicorn api.main:app --reload --port 8000
 
 API 文件自動產生於：`http://localhost:8000/docs`
 
-### 排程自動爬取（P2 完成後可用）
+### 首次部署前抑制歷史爆推
+
+```bash
+python -m src.scripts.suppress_initial_burst
+```
+
+將現有資料的 `last_alerted_price` 設為目前 `price`，避免第一次啟用 Discord Webhook 時大量舊資料全部觸發推播。
+
+### 排程自動爬取（本地測試用）
 
 使用系統 cron 或 Windows 工作排程器執行：
 

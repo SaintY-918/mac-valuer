@@ -33,13 +33,13 @@ class Deal(Base):
 class DBManager:
     def __init__(self):
         db_url = os.getenv("DATABASE_URL", "sqlite:///./mac_deals.db")
-        self.engine = create_engine(db_url, echo=False)
+        self.engine = create_engine(db_url, echo=False, pool_pre_ping=True)
         Base.metadata.create_all(self.engine)
         self._migrate_db()
         self.Session = sessionmaker(bind=self.engine)
 
     def _migrate_db(self):
-        """Add columns that didn't exist in pre-P1 databases (SQLite ALTER TABLE)."""
+        """Add columns that didn't exist in pre-P1 databases."""
         new_columns = {
             "source":             "ALTER TABLE deals ADD COLUMN source TEXT NOT NULL DEFAULT 'ptt'",
             "status":             "ALTER TABLE deals ADD COLUMN status TEXT DEFAULT 'available'",
@@ -48,8 +48,16 @@ class DBManager:
             "last_seen":          "ALTER TABLE deals ADD COLUMN last_seen TIMESTAMP",
             "last_alerted_price": "ALTER TABLE deals ADD COLUMN last_alerted_price INTEGER",
         }
+        dialect = self.engine.dialect.name
         with self.engine.connect() as conn:
-            existing = {row[1] for row in conn.execute(text("PRAGMA table_info(deals)"))}
+            if dialect == "sqlite":
+                existing = {row[1] for row in conn.execute(text("PRAGMA table_info(deals)"))}
+            else:
+                rows = conn.execute(text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'deals'"
+                ))
+                existing = {row[0] for row in rows}
             for col, stmt in new_columns.items():
                 if col not in existing:
                     conn.execute(text(stmt))
@@ -271,6 +279,17 @@ class DBManager:
         except Exception as e:
             logger.error("DB parsed read error: %s", e)
             return []
+
+
+    def get_last_seen(self) -> Optional[datetime]:
+        """Return the most recent last_seen timestamp across all rows, or None if empty."""
+        try:
+            with self.Session() as session:
+                result = session.execute(text("SELECT MAX(last_seen) FROM deals")).scalar()
+                return result
+        except Exception as e:
+            logger.error("DB get_last_seen error: %s", e)
+            return None
 
 
 if __name__ == "__main__":

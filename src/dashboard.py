@@ -1,11 +1,22 @@
 import datetime
 import os
+from datetime import timedelta
+
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import requests
 import streamlit as st
 
-API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
+# ── DATABASE_URL injection ─────────────────────────────────────────────────────
+# Streamlit Community Cloud provides secrets via st.secrets; fall back to env var
+# for local development. Must happen before DBManager is first imported/used.
+_db_url = st.secrets.get("DATABASE_URL") if hasattr(st, "secrets") else None
+if not _db_url:
+    _db_url = os.getenv("DATABASE_URL")
+if _db_url:
+    os.environ["DATABASE_URL"] = _db_url
+
+from src.database.db_manager import DBManager  # noqa: E402 (after env injection)
 
 _BENCH = {
     "M1": 8500, "M1 Pro": 12000, "M1 Max": 12500,
@@ -14,8 +25,6 @@ _BENCH = {
     "M4": 14500, "M4 Pro": 22000, "M4 Max": 26000,
 }
 
-
-# 預設機型×螢幕組合加權
 _DEFAULT_FORM_W = {
     "air13":  1.00,
     "air15":  1.08,
@@ -26,12 +35,10 @@ _DEFAULT_FORM_W = {
 
 
 def _form_key(row: dict) -> str:
-    """依 series + screen_size 決定形態 key。"""
     s  = str(row.get("series") or "").lower()
     sc = float(row.get("screen_size") or 13.3)
     if "air" in s:
         return "air15" if sc >= 15.0 else "air13"
-    # Pro
     if sc >= 15.0:
         return "pro16"
     if sc >= 14.0:
@@ -40,7 +47,6 @@ def _form_key(row: dict) -> str:
 
 
 def _nan_safe(val, default):
-    """Return default when val is None, NaN, or falsy."""
     import math
     if val is None:
         return default
@@ -68,13 +74,17 @@ def _recalc_vfm(row: dict, w: dict) -> float:
 
 
 def _vfm_badge(score: float, p75: float, p50: float) -> str:
-    """回傳帶顏色 emoji 的分數字串。"""
     if score >= p75:
         return f"🟢 {score:.2f}"
     elif score >= p50:
         return f"🟡 {score:.2f}"
     else:
         return f"🔴 {score:.2f}"
+
+
+@st.cache_resource
+def _get_db() -> DBManager:
+    return DBManager()
 
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -85,13 +95,11 @@ st.markdown("""
 [data-testid="stMetric"] { background:#1e1e2e; border-radius:10px; padding:12px 16px; }
 [data-testid="stSidebarContent"] { background:#16162a; }
 
-/* 分頁按鈕群組 */
 div[data-testid="stHorizontalBlock"] .page-btn button {
     border-radius: 6px;
     font-weight: 600;
 }
 
-/* 前往連結按鈕 */
 a.deal-link {
     display: inline-flex;
     align-items: center;
@@ -113,7 +121,6 @@ a.deal-link:hover { opacity: 0.82; }
 with st.sidebar:
     st.markdown("## :material/search: 篩選條件")
 
-    # 統一初始化所有預設值，避免 widget value 衝突
     if "min_price" not in st.session_state:
         st.session_state.update({
             "model_type": None, "chip_input": "", "ram_gb": None,
@@ -197,37 +204,62 @@ with st.sidebar:
         })
 
     st.sidebar.button("重置", use_container_width=True, on_click=_reset_all)
-    st.sidebar.caption(f"資料來源：PTT MacShop　｜　API：{API_BASE}")
 
-# ── Fetch ──────────────────────────────────────────────────────────────────────
-# 來源篩選：只有選了單一來源才傳給 API（SQL filter）
-# 若兩個都選（或都不選）就不傳，讓 API 回傳全部
+    # ── Data freshness timestamp ───────────────────────────────────────────────
+    try:
+        _last_seen = _get_db().get_last_seen()
+        if _last_seen:
+            _tw = _last_seen + timedelta(hours=8)
+            st.sidebar.caption(f"🔄 資料庫最後更新時間：{_tw.strftime('%Y-%m-%d %H:%M')}（台灣時間）")
+        else:
+            st.sidebar.caption("🔄 資料庫最後更新時間：尚無資料")
+    except Exception:
+        st.sidebar.caption("🔄 資料庫最後更新時間：無法讀取")
+
+    st.sidebar.caption("資料來源：PTT MacShop　｜　蝦皮")
+
+# ── Fetch from DB (direct, no FastAPI required) ────────────────────────────────
+weights = {
+    "ram": ram_mult, "ssd": ssd_mult,
+    "air13": w_air13, "air15": w_air15,
+    "pro13": w_pro13, "pro14": w_pro14, "pro16": w_pro16,
+}
+
 _selected_sources: list = source_filter or []
-params: dict = {"status": "sold" if show_sold else "available"}
-if chip_input:                          params["chip"]        = chip_input
-if ram_gb:                              params["ram_gb"]      = ram_gb
-if ssd_gb_filter:                       params["ssd_gb"]      = ssd_gb_filter
-if screen_size_filter:                  params["screen_size"] = screen_size_filter
-if min_price > 0:                       params["min_price"]   = min_price
-if max_price > 0:                       params["max_price"]   = max_price
-if model_type:                          params["model_type"]  = model_type
-if len(_selected_sources) == 1:         params["source"]      = _selected_sources[0]
+_source_param = _selected_sources[0] if len(_selected_sources) == 1 else None
+_status_param = "sold" if show_sold else "available"
 
 try:
-    resp = requests.get(f"{API_BASE}/api/deals", params=params, timeout=10)
-    resp.raise_for_status()
-    _resp_json = resp.json()
-    deals = _resp_json.get("deals", [])
-    _thresholds = _resp_json.get("vfm_thresholds", {"p75": 350.0, "p50": 250.0})
-    p75 = float(_thresholds["p75"])
-    p50 = float(_thresholds["p50"])
-except requests.exceptions.ConnectionError:
-    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
-    st.error(f"無法連線到 API（{API_BASE}）。請先執行：`uvicorn api.main:app --reload --port 8000`")
-    st.stop()
+    db = _get_db()
+    deals = db.get_filtered_deals(
+        status=_status_param,
+        chip=chip_input or None,
+        ram_gb=ram_gb,
+        screen_size=screen_size_filter,
+        min_price=float(min_price) if min_price > 0 else None,
+        max_price=float(max_price) if max_price > 0 else None,
+        model_type=model_type,
+        source=_source_param,
+    )
+    # ssd_gb filter: not in SQL, apply in Python
+    if ssd_gb_filter:
+        deals = [d for d in deals if int(_nan_safe(d.get("ssd_gb"), 0)) == ssd_gb_filter]
+
+    # All available deals (unfiltered) for p75/p50 baseline
+    all_available = db.get_filtered_deals(status="available")
 except Exception as exc:
-    st.error(f"API 錯誤：{exc}")
+    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+    st.error(
+        f"資料庫連線失敗：{exc}\n\n"
+        "請確認 `DATABASE_URL` 環境變數已正確設定（本地開發於 `.env`；"
+        "Streamlit Cloud 請在 Secrets 設定）。"
+    )
     st.stop()
+
+# ── Compute VFM thresholds from ALL available deals (unfiltered) ───────────────
+_all_scores = [_recalc_vfm(d, weights) for d in all_available if _nan_safe(d.get("price"), 0) > 0]
+p75 = float(np.percentile(_all_scores, 75)) if _all_scores else 350.0
+p50 = float(np.percentile(_all_scores, 50)) if _all_scores else 250.0
 
 if not deals:
     st.title(":material/laptop: 二手 MacBook 智慧估價系統")
@@ -239,18 +271,11 @@ if "source" not in df.columns:
     df["source"] = ""
 df["source"] = df["source"].fillna("")
 
-# 若選了兩個來源，API 回傳全部，這裡做 client-side 過濾（空選=全不顯示）
-if _selected_sources and len(_selected_sources) < 2:
-    pass  # 已由 API source param 過濾
-elif len(_selected_sources) == 0:
-    df = df.iloc[0:0]  # 都不選 → 空結果
+# Client-side source filter (both/none selected)
+if len(_selected_sources) == 0:
+    df = df.iloc[0:0]
 
 # ── Recalculate VFM with user weights ─────────────────────────────────────────
-weights = {
-    "ram": ram_mult, "ssd": ssd_mult,
-    "air13": w_air13, "air15": w_air15,
-    "pro13": w_pro13, "pro14": w_pro14, "pro16": w_pro16,
-}
 df["vfm_score"] = df.apply(lambda r: _recalc_vfm(r.to_dict(), weights), axis=1)
 df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 
@@ -363,12 +388,10 @@ current_page = int(st.session_state.get("page_num", 1))
 current_page = max(1, min(current_page, max_pages))
 
 
-
 # ── Data table ─────────────────────────────────────────────────────────────────
 start = (current_page - 1) * page_size
 paginated = df.iloc[start: start + page_size].copy()
 
-# 加入 VFM 顏色標籤欄
 paginated["CP 值"] = paginated["vfm_score"].apply(lambda s: _vfm_badge(s, p75, p50))
 
 display_cols = {
@@ -406,7 +429,7 @@ st.dataframe(
     hide_index=True,
 )
 
-# ── Pagination — 頁碼按鈕列（列表下方）───────────────────────────────────────
+# ── Pagination ─────────────────────────────────────────────────────────────────
 st.markdown("")
 
 def _page_range(current: int, total: int, window: int = 2) -> list:
