@@ -17,3 +17,12 @@ skills-lock.json
 list_models.py
 test_engine.py
 backup.bat
+scratch/
+scratch_shopee.py
+
+# Shopee scraper local artifacts (cookies, browser profile, debug snapshots)
+.shopee_profile/
+shopee_state.json
+.shopee_state.json
+shopee_dom.html
+shopee_headless.png
