@@ -273,7 +273,9 @@ df["source"] = df["source"].fillna("")
 
 # Client-side source filter (both/none selected)
 if len(_selected_sources) == 0:
-    df = df.iloc[0:0]
+    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+    st.warning("請至少選擇一個賣場來源（PTT 或 蝦皮）。")
+    st.stop()
 
 # ── Recalculate VFM with user weights ─────────────────────────────────────────
 df["vfm_score"] = df.apply(lambda r: _recalc_vfm(r.to_dict(), weights), axis=1)
