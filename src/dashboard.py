@@ -114,6 +114,17 @@ a.deal-link {
     transition: opacity .15s;
 }
 a.deal-link:hover { opacity: 0.82; }
+
+/* Keep pagination row horizontal on all screen sizes */
+[data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+    gap: 0.5rem;
+    align-items: center;
+}
+[data-testid="stColumn"] {
+    min-width: 0 !important;
+    flex-shrink: 1 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
