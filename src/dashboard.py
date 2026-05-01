@@ -284,7 +284,10 @@ df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 # ── Header ─────────────────────────────────────────────────────────────────────
 st.title(":material/laptop: 二手 MacBook 智慧估價系統")
 prices = df["price"].dropna().astype(float)
-_new_count = _get_db().get_new_count()
+try:
+    _new_count = _get_db().get_new_count()
+except Exception:
+    _new_count = 0
 _price_range = (
     f"{int(prices.min()):,} ~ {int(prices.max()):,} 元" if len(prices) else "—"
 )
