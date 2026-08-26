@@ -1,0 +1,237 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,800&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #1F48FF; text-decoration: none; }
+    a:hover { color: #4A6BFF; }
+  </style>
+</helmet>
+
+<div style="width: 1240px; height: 1000px; box-sizing: border-box; background: #0A0E1A; color: #C7CCD8; font-family: 'Noto Sans TC', 'Archivo', system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <div style="height: 6px; flex-shrink: 0; background-image: repeating-linear-gradient(-60deg, #1F48FF 0 14px, #1539DB 14px 28px);"></div>
+
+  <div style="flex-grow: 1; min-height: 0; padding: 24px 32px 20px; display: flex; flex-direction: column; gap: 16px;">
+
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <div style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #15E0FF;">SainTech · 二手行情</div>
+        <div style="font-family: 'Archivo', 'Noto Sans TC', sans-serif; font-weight: 900; font-size: 38px; line-height: 1.04; letter-spacing: -0.02em; color: #FFFFFF;">二手 MacBook 估價</div>
+      </div>
+      <div style="display: flex; gap: 32px; align-items: flex-end;">
+        <div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end;">
+          <div style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B768F;">在售</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 24px; color: #FFFFFF; line-height: 1;">74</div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end;">
+          <div style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B768F;">價格區間</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 24px; color: #FFFFFF; line-height: 1;">9,000–88,000</div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px; align-items: flex-end;">
+          <div style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B768F;">今日新增</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 24px; color: #15E0FF; line-height: 1;">+41</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; letter-spacing: 0.01em; padding: 6px 12px; border-radius: 999px; background: #1F48FF; color: #FFFFFF; border: 1px solid #1F48FF;">CP 值高到低</span>
+      <span style="display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; letter-spacing: 0.01em; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">價格低到高</span>
+      <span style="display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; letter-spacing: 0.01em; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">最新上架</span>
+      <div style="flex-grow: 1;"></div>
+      <span style="display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; letter-spacing: 0.01em; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">PTT</span>
+      <span style="display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; letter-spacing: 0.01em; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">蝦皮</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+
+      <div style="display: flex; align-items: center; gap: 20px; padding: 16px 20px; background: #11162A; border: 2px solid #1F48FF; border-radius: 16px; box-shadow: 0 0 0 1px rgba(31, 72, 255, 0.5), 0 8px 28px rgba(31, 72, 255, 0.35);">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0;">
+          <div style="width: 68px; height: 68px; border-radius: 10px; background: #0A0E1A; border: 3px solid #16C76A; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px #16C76A55;">
+            <span style="font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 26px; color: #FFFFFF; line-height: 1;">694</span>
+          </div>
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #16C76A;">CP 值</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 9px; border-radius: 4px; line-height: 1; background: #1F48FF; color: #FFFFFF;">最划算</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 9px; border-radius: 4px; line-height: 1; background: #E1F8EC; color: #0C7A41;">九成新</span>
+            <div style="font-family: 'Noto Sans TC', sans-serif; font-weight: 700; font-size: 16px; color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">『澄橘』Macbook Air 15 2025 M4 10C10G/16G/256G 午夜 瑕疵機</div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">M4</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">16GB / 256GB</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">15.0"</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">2025</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">電池 100%</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0;">
+          <div style="display: flex; align-items: baseline; gap: 4px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; color: #6B768F;">NT$</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 27px; color: #FFFFFF; line-height: 1;">23,500</span>
+          </div>
+          <div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Archivo', 'Noto Sans TC', sans-serif; font-weight: 800; font-size: 15px; letter-spacing: 0.01em; padding: 11px 20px; border-radius: 10px; background: #1F48FF; color: #FFFFFF; border: 2px solid #1F48FF;">前往蝦皮</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 20px; padding: 16px 20px; background: #11162A; border: 1px solid #1B2238; border-radius: 16px;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0;">
+          <div style="width: 68px; height: 68px; border-radius: 10px; background: #0A0E1A; border: 3px solid #16C76A; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px #16C76A55;">
+            <span style="font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 26px; color: #FFFFFF; line-height: 1;">627</span>
+          </div>
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #16C76A;">CP 值</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1; min-width: 0;">
+          <div style="font-family: 'Noto Sans TC', sans-serif; font-weight: 700; font-size: 16px; color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">台北 macbook air M4 16G/256G 天藍</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">M4</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">16GB / 256GB</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">13.0"</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">2025</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">台北面交</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0;">
+          <div style="display: flex; align-items: baseline; gap: 4px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; color: #6B768F;">NT$</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 27px; color: #FFFFFF; line-height: 1;">26,000</span>
+          </div>
+          <div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Archivo', 'Noto Sans TC', sans-serif; font-weight: 800; font-size: 15px; letter-spacing: 0.01em; padding: 11px 20px; border-radius: 10px; background: transparent; color: #FFFFFF; border: 2px solid #2B3450;">前往 PTT</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 20px; padding: 16px 20px; background: #11162A; border: 1px solid #1B2238; border-radius: 16px;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0;">
+          <div style="width: 68px; height: 68px; border-radius: 10px; background: #0A0E1A; border: 3px solid #16C76A; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px #16C76A55;">
+            <span style="font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 26px; color: #FFFFFF; line-height: 1;">604</span>
+          </div>
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #16C76A;">CP 值</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1; min-width: 0;">
+          <div style="font-family: 'Noto Sans TC', sans-serif; font-weight: 700; font-size: 16px; color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">雙北 MacBook Air 13" M4 16GB 256g 銀</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">M4</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">16GB / 256GB</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">13.0"</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">2025</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">保固至 2026-12</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0;">
+          <div style="display: flex; align-items: baseline; gap: 4px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; color: #6B768F;">NT$</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 27px; color: #FFFFFF; line-height: 1;">27,000</span>
+          </div>
+          <div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Archivo', 'Noto Sans TC', sans-serif; font-weight: 800; font-size: 15px; letter-spacing: 0.01em; padding: 11px 20px; border-radius: 10px; background: transparent; color: #FFFFFF; border: 2px solid #2B3450;">前往 PTT</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 20px; padding: 16px 20px; background: #11162A; border: 1px solid #1B2238; border-radius: 16px;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0;">
+          <div style="width: 68px; height: 68px; border-radius: 10px; background: #0A0E1A; border: 3px solid #FFB020; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px #FFB02055;">
+            <span style="font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 26px; color: #FFFFFF; line-height: 1;">513</span>
+          </div>
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #FFB020;">CP 值</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1; min-width: 0;">
+          <div style="font-family: 'Noto Sans TC', sans-serif; font-weight: 700; font-size: 16px; color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">雙北 MacBook Air M1 13" &amp; M4 15"</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">M1</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">16GB / 256GB</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">13.3"</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">2020</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #FFB020; border: 1px solid #2B3450;">電池 83%</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0;">
+          <div style="display: flex; align-items: baseline; gap: 4px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; color: #6B768F;">NT$</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 27px; color: #FFFFFF; line-height: 1;">11,000</span>
+          </div>
+          <div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Archivo', 'Noto Sans TC', sans-serif; font-weight: 800; font-size: 15px; letter-spacing: 0.01em; padding: 11px 20px; border-radius: 10px; background: transparent; color: #FFFFFF; border: 2px solid #2B3450;">前往 PTT</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 20px; padding: 16px 20px; background: #11162A; border: 1px solid #1B2238; border-radius: 16px;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0;">
+          <div style="width: 68px; height: 68px; border-radius: 10px; background: #0A0E1A; border: 3px solid #FFB020; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px #FFB02055;">
+            <span style="font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 26px; color: #FFFFFF; line-height: 1;">502</span>
+          </div>
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #FFB020;">CP 值</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1; min-width: 0;">
+          <div style="font-family: 'Noto Sans TC', sans-serif; font-weight: 700; font-size: 16px; color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">雙北 Macbook Pro 13 M1 16G/512G</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">M1</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">16GB / 512GB</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">13.3"</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">2021</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #FFB020; border: 1px solid #2B3450;">電池 88%</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0;">
+          <div style="display: flex; align-items: baseline; gap: 4px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; color: #6B768F;">NT$</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 27px; color: #FFFFFF; line-height: 1;">12,500</span>
+          </div>
+          <div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Archivo', 'Noto Sans TC', sans-serif; font-weight: 800; font-size: 15px; letter-spacing: 0.01em; padding: 11px 20px; border-radius: 10px; background: transparent; color: #FFFFFF; border: 2px solid #2B3450;">前往 PTT</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 20px; padding: 16px 20px; background: #11162A; border: 1px solid #1B2238; border-radius: 16px;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0;">
+          <div style="width: 68px; height: 68px; border-radius: 10px; background: #0A0E1A; border: 3px solid #FF3B47; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 18px #FF3B4755;">
+            <span style="font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 26px; color: #FFFFFF; line-height: 1;">318</span>
+          </div>
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #FF3B47;">CP 值</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1; min-width: 0;">
+          <div style="font-family: 'Noto Sans TC', sans-serif; font-weight: 700; font-size: 16px; color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">全國 MacBook Pro M4 Pro 14吋 24G/512G</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">M4 Pro</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">24GB / 512GB</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">14.0"</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">2024</span>
+            <span style="display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; padding: 6px 12px; border-radius: 999px; background: #1B2238; color: #C7CCD8; border: 1px solid #2B3450;">保固內</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0;">
+          <div style="display: flex; align-items: baseline; gap: 4px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; color: #6B768F;">NT$</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 27px; color: #FFFFFF; line-height: 1;">46,000</span>
+          </div>
+          <div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: 'Archivo', 'Noto Sans TC', sans-serif; font-weight: 800; font-size: 15px; letter-spacing: 0.01em; padding: 11px 20px; border-radius: 10px; background: transparent; color: #FFFFFF; border: 2px solid #2B3450;">前往 PTT</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: auto; padding-top: 8px;">
+      <div style="display: flex; gap: 16px; align-items: center; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B768F;">
+        <div style="display: flex; gap: 6px; align-items: center;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #16C76A; display: block;"></span>優秀</div>
+        <div style="display: flex; gap: 6px; align-items: center;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #FFB020; display: block;"></span>普通</div>
+        <div style="display: flex; gap: 6px; align-items: center;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #FF3B47; display: block;"></span>偏貴</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 13px; color: #FFFFFF; width: 32px; height: 32px; border-radius: 6px; background: #1F48FF; border: 2px solid #1F48FF; display: flex; align-items: center; justify-content: center;">1</div>
+        <div style="font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 13px; color: #C7CCD8; width: 32px; height: 32px; border-radius: 6px; border: 2px solid #2B3450; display: flex; align-items: center; justify-content: center;">2</div>
+        <div style="font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 13px; color: #C7CCD8; width: 32px; height: 32px; border-radius: 6px; border: 2px solid #2B3450; display: flex; align-items: center; justify-content: center;">3</div>
+        <div style="font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 13px; color: #C7CCD8; width: 32px; height: 32px; border-radius: 6px; border: 2px solid #2B3450; display: flex; align-items: center; justify-content: center;">4</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6B768F; padding-left: 8px;">共 74 筆</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

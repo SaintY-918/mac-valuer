@@ -61,12 +61,33 @@ cp .env.example .env
 
 ```
 GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
-  └─ python -m src.main
-       └─ 寫入 ──► Neon PostgreSQL (免費 0.5 GB, sslmode=require)
-                              ▲
+  └─ python -m src.main --source ptt   （有 Affiliate 金鑰時為 all）
+       └─ 寫入 ─┐
+                ├─► Neon PostgreSQL (免費 0.5 GB, sslmode=require)
+本機 Windows 排程 ┘                    ▲
+  └─ scripts/run_local_shopee.ps1      │
+       └─ python -m src.main --source shopee
+                                       │
               Streamlit Community Cloud (免費, 公開)
               直連 DBManager.get_filtered_deals()
 ```
+
+### 為什麼蝦皮要分開跑
+
+蝦皮的**瀏覽器爬蟲無法在 GitHub Actions 上運作**，這不是設定問題，而是三個結構性限制：
+
+1. 蝦皮反爬會封鎖資料中心 IP（GitHub runner 跑在 Azure 機房），瀏覽器指紋偽裝救不了。
+2. 登入 session（`shopee_state.json`）存在本機，無法帶到用完即丟的 runner 上。
+3. `camoufox` 需要自帶的 Firefox 核心（`python -m camoufox fetch`），CI 上沒有。
+
+因此有兩條路徑，由 `ShopeeScraper.fetch_listings()` 自動選擇：
+
+| 條件 | 走的路徑 | 可否在 CI 跑 |
+|---|---|---|
+| `.env` 有 `SHOPEE_APP_ID` + `SHOPEE_APP_SECRET` | 蝦皮聯盟行銷 Open API（簽章 HTTP，無反爬） | ✅ |
+| 兩者留空 | camoufox 瀏覽器爬蟲 | ❌ 僅本機 |
+
+`src/main.py` 不含任何平台判斷，切換完全封裝在 scraper 內（Strategy Pattern，見 `.spec/specs/scraper/spec.md`）。
 
 ### 部署步驟
 
@@ -80,10 +101,17 @@ GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
    | `GEMINI_API_KEY` | Google AI Studio Key |
    | `DISCORD_WEBHOOK_URL` | Discord Webhook URL（選用） |
    | `ALERT_VFM_THRESHOLD` | VFM 推播閾值，預設 500（選用） |
+   | `SHOPEE_APP_ID` | 蝦皮聯盟行銷 AppID（選用；設了才會在 CI 上跑蝦皮） |
+   | `SHOPEE_APP_SECRET` | 蝦皮聯盟行銷 Secret（選用） |
 
-3. **GitHub Actions**：push `.github/workflows/scraper.yml` 後自動啟用。可到 Actions 頁面手動 dispatch 測試。每天執行完畢後 Discord 會收到「每日巡邏完畢」heartbeat 通知。
+3. **GitHub Actions**：push `.github/workflows/scraper.yml` 後自動啟用。可到 Actions 頁面手動 dispatch 測試。每天執行完畢後 Discord 會收到 heartbeat 通知——**某來源爬取失敗時會顯示 ⛔ 與失敗原因，不會偽裝成「0 筆」**。
 
-4. **Streamlit Community Cloud**：連結 GitHub repo → Main file path 設為 `streamlit_app.py` → Secrets 貼入：
+4. **本機蝦皮排程**（在 Affiliate API 通過前的資料來源）：先跑一次
+   `SHOPEE_HEADLESS=false python -m src.main --source shopee` 手動登入建立 session，
+   再依 `scripts/run_local_shopee.ps1` 檔頭註解註冊 Windows 工作排程器。
+   `.env` 的 `DATABASE_URL` 要指向 Neon，本機跑的結果才會進到雲端 Dashboard。
+
+5. **Streamlit Community Cloud**：連結 GitHub repo → Main file path 設為 `streamlit_app.py` → Secrets 貼入：
    ```toml
    DATABASE_URL = "postgresql+psycopg2://...?sslmode=require"
    ```
@@ -101,13 +129,51 @@ python -m src.main
 
 執行完畢後會在根目錄產生 `valuation_report.csv`，並在終端機印出前 15 名高 VFM 機器。
 
+只想重新修復/評分/推播既有資料，不重新爬蟲（例如測試 Discord 通知，避免浪費 LLM 額度重新解析新項目）：
+
+```bash
+python -m src.main --skip-scrape
+```
+
+### 確認目前連的是哪個資料庫
+
+```bash
+python -m src.scripts.check_db
+```
+
+印出 `DATABASE_URL` 指向的主機（密碼會遮罩）、是 SQLite 還是 Neon、各來源筆數與最後更新時間。**設定本機蝦皮排程前務必先跑這個**——若顯示 SQLite，爬到的資料只會進本機檔案，不會出現在雲端 Dashboard。
+
+### 驗證蝦皮 Affiliate API 覆蓋率
+
+聯盟行銷 API 回傳的是「已加入聯盟計畫的賣場商品」，二手個人賣家是否涵蓋其中**必須實測**。拿到 `SHOPEE_APP_ID` / `SHOPEE_APP_SECRET` 後先跑：
+
+```bash
+python -m src.scripts.probe_shopee_affiliate
+python -m src.scripts.probe_shopee_affiliate --keyword "MacBook Pro 二手" --pages 2 --dump nodes.json
+```
+
+它會印出原始筆數、通過 L1 的筆數、標題含二手關鍵字的筆數與樣本清單，並直接給出「值得切換」或「覆蓋率不足，維持瀏覽器爬蟲」的判斷。
+
+### 測試 Discord 推播
+
+```bash
+python -m src.scripts.trigger_test   # 強制標記資料庫中一筆已解析商品，讓它下次跑一定觸發推播
+python -m src.main --skip-scrape     # 不爬蟲，直接修復＋評分＋送出通知
+```
+
+需要先在 `.env` 設定 `DISCORD_WEBHOOK_URL`（Discord 頻道設定 → 整合 → Webhook → 複製 Webhook URL）。
+
 ### 啟動 Streamlit Dashboard
 
 ```bash
-streamlit run src/dashboard.py
+streamlit run streamlit_app.py
 ```
 
-Dashboard 直連 `DATABASE_URL` 指定的資料庫（本地 SQLite 或 Neon PostgreSQL）。
+必須從根目錄的 `streamlit_app.py` 進入。直接跑 `streamlit run src/dashboard.py` 會因為 repo 根目錄不在 `sys.path` 而拋 `ModuleNotFoundError: No module named 'src'`。
+
+Dashboard 直連 `DATABASE_URL` 指定的資料庫（本地 SQLite 或 Neon PostgreSQL），不經過 FastAPI。
+
+物件以響應式卡片呈現：視窗 ≥1800px 四欄、≥1200px 三欄、≥700px 兩欄、手機單欄。呈現規範見 [`.spec/specs/api/spec.md`](.spec/specs/api/spec.md)。
 
 ### 啟動 FastAPI 伺服器（本地開發用）
 

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-_model_id = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+_model_id = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def preprocess_text(text: str) -> str:

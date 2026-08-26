@@ -26,3 +26,11 @@ shopee_state.json
 .shopee_state.json
 shopee_dom.html
 shopee_headless.png
+
+# Local scheduled-run logs
+logs/
+
+# Design canvas: keep the artboard sources, not the 2.5 MB seeded output
+# (it bundles the canvas editor and is rebuilt by the design skill on demand)
+design/*.html
+!design/*.dc.html

@@ -1,18 +1,29 @@
 import datetime
 import os
 from datetime import timedelta
+from html import escape
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+def _read_secret(name: str) -> str | None:
+    """Streamlit Community Cloud serves config via st.secrets; local runs use env.
+
+    st.secrets raises when no secrets file exists rather than being absent, so
+    the lookup has to be guarded rather than checked with hasattr.
+    """
+    try:
+        val = st.secrets.get(name)
+    except st.errors.StreamlitSecretNotFoundError:
+        val = None
+    return val or os.getenv(name)
+
+
 # ── DATABASE_URL injection ─────────────────────────────────────────────────────
-# Streamlit Community Cloud provides secrets via st.secrets; fall back to env var
-# for local development. Must happen before DBManager is first imported/used.
-_db_url = st.secrets.get("DATABASE_URL") if hasattr(st, "secrets") else None
-if not _db_url:
-    _db_url = os.getenv("DATABASE_URL")
+# Must happen before DBManager is first imported/used.
+_db_url = _read_secret("DATABASE_URL")
 if _db_url:
     os.environ["DATABASE_URL"] = _db_url
 
@@ -73,15 +84,6 @@ def _recalc_vfm(row: dict, w: dict) -> float:
     return round(base * depr * ram_m * ssd_m * form_m / price * 1000, 2)
 
 
-def _vfm_badge(score: float, p75: float, p50: float) -> str:
-    if score >= p75:
-        return f"🟢 {score:.2f}"
-    elif score >= p50:
-        return f"🟡 {score:.2f}"
-    else:
-        return f"🔴 {score:.2f}"
-
-
 @st.cache_resource
 def _get_db() -> DBManager:
     return DBManager()
@@ -92,28 +94,278 @@ st.set_page_config(page_title="mac-valuer | 二手 MacBook 估價", page_icon=":
 
 st.markdown("""
 <style>
-[data-testid="stMetric"] { background:#1e1e2e; border-radius:10px; padding:12px 16px; }
-[data-testid="stSidebarContent"] { background:#16162a; }
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
 
-div[data-testid="stHorizontalBlock"] .page-btn button {
-    border-radius: 6px;
-    font-weight: 600;
+/* ── SainTech Design System tokens ──────────────────────────────────────────
+   Values lifted verbatim from the design system project (tokens/colors.css,
+   typography.css, layout.css) — do not round or re-pick them here. The brand
+   rule that shapes this page: mono is for specs, prices and model numbers;
+   Archivo 900 carries display weight; borders beat shadows, and on dark
+   surfaces glow beats grey shadow. */
+:root {
+    --blue-500: #1F48FF;   /* core brand */
+    --blue-600: #1539DB;
+    --cyan-500: #15E0FF;   /* new / live / highlight */
+
+    --ink-900: #0A0E1A;
+    --ink-800: #11162A;
+    --ink-700: #1B2238;
+    --ink-600: #2B3450;
+    --ink-400: #6B768F;
+    --ink-200: #C7CCD8;
+
+    --success: #16C76A;
+    --warning: #FFB020;
+    --danger:  #FF3B47;
+
+    --font-display: "Archivo", "Noto Sans TC", system-ui, sans-serif;
+    --font-body:    "Noto Sans TC", "Archivo", system-ui, sans-serif;
+    --font-mono:    "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --radius-pill: 999px;
+
+    --glow-brand: 0 0 0 1px rgba(31, 72, 255, 0.5), 0 8px 28px rgba(31, 72, 255, 0.35);
+    --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+    --dur-fast: 120ms;
 }
 
-a.deal-link {
-    display: inline-flex;
+/* ── Streamlit chrome ───────────────────────────────────────────────────────
+   Colours, fonts and radii come from .streamlit/config.toml, not from here —
+   overriding them with CSS loses to Streamlit's own selectors and leaves the
+   widgets on the light theme. Only what the theme cannot express lives below. */
+/* Streamlit paints headings in textColor; the brand puts them on --text-strong.
+   There is no theme option for heading colour, so this is the one place a
+   selector is still needed — scoped tightly enough to beat Streamlit's own. */
+[data-testid="stHeading"] h1, [data-testid="stHeading"] h2 { color: #FFFFFF; }
+
+h1 {
+    /* Break at spaces (after "MacBook" on mobile), never mid-CJK-word. */
+    word-break: keep-all;
+    overflow-wrap: normal;
+    line-height: 1.04;
+    letter-spacing: -0.02em;
+}
+h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important; }
+
+/* The logo's S carries a motion dot-trail; as a band it becomes the page's
+   masthead rule (base.css .st-speed-stripes). */
+.st-stripe {
+    height: 5px;
+    border-radius: 2px;
+    margin: 0 0 14px;
+    background-image: repeating-linear-gradient(-60deg, var(--blue-500) 0 14px, var(--blue-600) 14px 28px);
+}
+
+.st-eyebrow {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--cyan-500);
+    margin-bottom: 2px;
+}
+
+/* ── Stat row ─────────────────────────────────────────────────────────────── */
+.stat-row { display: flex; flex-wrap: nowrap; gap: 8px; margin: 10px 0 12px; }
+.stat {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 9px 14px;
+    background: var(--ink-800);
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-md);
+}
+.stat--wide { flex: 1.9 1 0; }
+.stat span {
+    display: block;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-400);
+    margin-bottom: 2px;
+    white-space: nowrap;
+}
+.stat b {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 22px;
+    color: #FFFFFF;
+    white-space: nowrap;
+    line-height: 1.1;
+}
+.stat--new b { color: var(--cyan-500); }
+
+.vfm-legend {
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+    padding: 2px 0 10px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-400);
+}
+.vfm-legend i { font-style: normal; }
+.vfm-legend b { width: 8px; height: 8px; border-radius: 2px; display: block; }
+
+/* ── Deal rows ────────────────────────────────────────────────────────────
+   One item per row rather than a multi-column grid: each row carries only
+   score, title, specs and price, so it stays scannable at full width. */
+.deal-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 18px; }
+
+.deal {
+    display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, #3b82f6, #6366f1);
-    color: white !important;
-    font-size: 0.82rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: opacity .15s;
+    gap: 20px;
+    padding: 16px 20px;
+    background: var(--ink-800);
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-lg);
+    text-decoration: none !important;
+    color: var(--ink-200) !important;
+    transition: transform var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out);
 }
-a.deal-link:hover { opacity: 0.82; }
+/* Brand motion rule: quick, mechanical, no overshoot. */
+.deal:hover { transform: translateY(-3px); filter: brightness(1.08); }
+@media (hover: none) { .deal:hover { transform: none; filter: none; } }
+
+/* Rank 1 on page 1 answers the question the product exists to ask. */
+.deal--top { border: 2px solid var(--blue-500); box-shadow: var(--glow-brand); }
+
+/* ScorePill anatomy, minus the /max — VFM has no fixed ceiling. */
+.deal__score { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
+.deal__box {
+    width: 68px; height: 68px;
+    border-radius: var(--radius-md);
+    background: var(--ink-900);
+    border: 3px solid var(--tone);
+    box-shadow: 0 0 18px var(--tone-glow);
+    display: flex; align-items: center; justify-content: center;
+}
+.deal__box span { font-family: var(--font-display); font-weight: 900; font-size: 26px; color: #FFFFFF; line-height: 1; }
+.deal__scorelabel {
+    font-family: var(--font-display);
+    font-weight: 700; font-size: 10px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--tone);
+}
+
+.deal__body { display: flex; flex-direction: column; gap: 8px; flex-grow: 1; min-width: 0; }
+.deal__titlerow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.deal__title {
+    font-family: var(--font-body);
+    font-weight: 700; font-size: 16px;
+    color: #FFFFFF;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.badge {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center;
+    font-family: var(--font-display);
+    font-weight: 800; font-size: 11px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 4px 9px; border-radius: 4px; line-height: 1;
+    background: var(--blue-500); color: #FFFFFF;
+}
+
+.deal__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.deal__chips i {
+    font-style: normal;
+    display: inline-flex; align-items: center;
+    font-family: var(--font-mono);
+    font-weight: 500; font-size: 13px; letter-spacing: 0.01em;
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    background: var(--ink-700);
+    color: var(--ink-200);
+    border: 1px solid var(--ink-600);
+}
+.deal__chips i.warn { color: var(--warning); }
+
+.deal__buy { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0; }
+.deal__price { display: flex; align-items: baseline; gap: 4px; }
+.deal__price s { font-family: var(--font-mono); font-weight: 500; font-size: 13px; color: var(--ink-400); text-decoration: none; }
+.deal__price b { font-family: var(--font-mono); font-weight: 700; font-size: 27px; color: #FFFFFF; line-height: 1; }
+.deal__cta {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 44px;
+    font-family: var(--font-display);
+    font-weight: 800; font-size: 15px; letter-spacing: 0.01em;
+    padding: 11px 20px;
+    border-radius: var(--radius-md);
+    background: transparent; color: #FFFFFF;
+    border: 2px solid var(--ink-600);
+    white-space: nowrap;
+}
+.deal--top .deal__cta { background: var(--blue-500); border-color: var(--blue-500); }
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+.st-footer {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 12px;
+    margin-top: 22px; padding-top: 14px;
+    border-top: 1px solid var(--ink-700);
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink-400);
+}
+.st-footer a {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--font-display); font-weight: 700; font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--ink-200) !important;
+    text-decoration: none !important;
+    transition: color var(--dur-fast) var(--ease-out);
+}
+.st-footer a:hover { color: var(--cyan-500) !important; }
+.st-footer a svg { flex-shrink: 0; }
+
+/* ── Below 700px the row folds into a stack ───────────────────────────────── */
+@media (max-width: 700px) {
+    h1 { font-size: 1.5rem !important; }
+    .st-eyebrow { font-size: 10px; }
+    .stat { padding: 7px 10px; }
+    .stat span { font-size: 9px; letter-spacing: 0.1em; }
+    .stat b { font-size: 15px; }
+    .stat--wide b { font-size: 12.5px; }
+    .vfm-legend { gap: 10px; font-size: 11px; }
+    .block-container { padding-top: 2.2rem !important; }
+
+    /* Grid areas rather than a column flex: the chips live inside .deal__body in
+       the DOM, but on a phone they need the full card width instead of the
+       narrow column beside the score. Dissolving .deal__body with
+       `display: contents` promotes its children to grid items so they can be
+       placed independently — no duplicate markup for the two layouts. */
+    .deal {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas:
+            "score title"
+            "chips chips"
+            "buy   buy";
+        align-items: start;
+        gap: 10px 12px;
+        padding: 14px;
+    }
+    .deal__body { display: contents; }
+    .deal__score { grid-area: score; }
+    .deal__titlerow { grid-area: title; }
+    .deal__chips { grid-area: chips; }
+    .deal__buy { grid-area: buy; }
+
+    .deal__box { width: 60px; height: 60px; }
+    .deal__box span { font-size: 23px; }
+    .deal__title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 14px; line-height: 1.45; }
+    .deal__titlerow { flex-wrap: wrap; }
+    .deal__chips i { font-size: 11.5px; padding: 5px 10px; }
+    .deal__buy {
+        flex-direction: row; align-items: center; justify-content: space-between;
+        padding-top: 10px; border-top: 1px solid var(--ink-700);
+    }
+    .deal__price b { font-size: 24px; }
+    .deal__cta { font-size: 14px; }
+}
 
 /* Keep pagination row horizontal on all screen sizes */
 [data-testid="stHorizontalBlock"] {
@@ -125,12 +377,6 @@ a.deal-link:hover { opacity: 0.82; }
     min-width: 0 !important;
     flex-shrink: 1 !important;
 }
-
-/* Title: break only at spaces (after MacBook on mobile), never mid-CJK-word */
-h1 { word-break: keep-all; overflow-wrap: normal; }
-
-/* Hide Streamlit's auto-injected anchor icon on headings */
-h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -299,39 +545,32 @@ df["vfm_score"] = df.apply(lambda r: _recalc_vfm(r.to_dict(), weights), axis=1)
 df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 
 # ── Header ─────────────────────────────────────────────────────────────────────
-st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+st.markdown('<div class="st-stripe"></div><div class="st-eyebrow">SainTech · 二手行情</div>',
+            unsafe_allow_html=True)
+st.title("二手 MacBook 估價")
 prices = df["price"].dropna().astype(float)
 try:
     _new_count = _get_db().get_new_count()
 except Exception:
     _new_count = 0
 _price_range = (
-    f"{int(prices.min()):,} ~ {int(prices.max()):,} 元" if len(prices) else "—"
+    f"{int(prices.min()):,}–{int(prices.max()):,}" if len(prices) else "—"
 )
 st.markdown(f"""
-<div style="display:flex;flex-wrap:wrap;gap:12px;margin:8px 0 12px;">
-  <div style="background:#1e1e2e;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
-    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">符合物件</div>
-    <div style="font-size:1.4rem;font-weight:700;">{len(df)} 筆</div>
-  </div>
-  <div style="background:#1e1e2e;border-radius:10px;padding:10px 18px;flex:2;min-width:160px;">
-    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">價格區間</div>
-    <div style="font-size:1.1rem;font-weight:700;">{_price_range}</div>
-  </div>
-  <div style="background:#1e1e2e;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
-    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">最近新增</div>
-    <div style="font-size:1.4rem;font-weight:700;">+{_new_count} 筆</div>
-  </div>
+<div class="stat-row">
+  <div class="stat"><span>在售</span><b>{len(df)}</b></div>
+  <div class="stat stat--wide"><span>價格區間</span><b>{_price_range}</b></div>
+  <div class="stat stat--new"><span>今日新增</span><b>+{_new_count}</b></div>
 </div>
 """, unsafe_allow_html=True)
 
 # ── 性價比圖例 ───────────────────────────────────────────────────────────────
+# Squares in the semantic colours, not emoji — the brand does not use emoji.
 st.markdown("""
-<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:4px 0 8px;font-size:0.85rem;color:#94a3b8;">
-  <span style="font-weight:600;color:#cbd5e1;">性價比</span>
-  <span>🟢 <b>優秀</b>（前 25%）</span>
-  <span>🟡 <b>普通</b>（前 50%）</span>
-  <span>🔴 <b>偏貴</b>（後 50%）</span>
+<div class="vfm-legend">
+  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--success);"></b><i>優秀</i> 前 25%</span>
+  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--warning);"></b><i>普通</i> 前 50%</span>
+  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--danger);"></b><i>偏貴</i> 後 50%</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -405,7 +644,7 @@ with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
 
 st.markdown("")
 
-# ── Table header ───────────────────────────────────────────────────────────────
+# ── Pagination state ───────────────────────────────────────────────────────────
 PAGE_SIZE = 20
 
 if "page_num" not in st.session_state:
@@ -416,46 +655,100 @@ current_page = int(st.session_state.get("page_num", 1))
 current_page = max(1, min(current_page, max_pages))
 
 
-# ── Data table ─────────────────────────────────────────────────────────────────
+# ── Deal cards ─────────────────────────────────────────────────────────────────
+# Rendered as one HTML block rather than st.dataframe: a 13-column table is
+# unreadable below ~700px and st.dataframe exposes almost no styling control.
+_SOURCE_LABELS = {"ptt": "PTT", "shopee": "蝦皮", "carousell": "旋轉"}
+
+
+def _tier(score: float) -> tuple[str, str]:
+    """Return (border colour, glow colour) for the score's verdict band.
+
+    The glow is the same hue at 33% alpha, matching ScorePill's `${tone}55`.
+    """
+    if score >= p75:
+        return "var(--success)", "#16C76A55"
+    if score >= p50:
+        return "var(--warning)", "#FFB02055"
+    return "var(--danger)", "#FF3B4755"
+
+
+def _int_or_none(val):
+    v = _nan_safe(val, 0)
+    try:
+        return int(float(v)) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def _render_deal(row: dict, is_top: bool) -> str:
+    score = float(row.get("vfm_score") or 0)
+    url = str(row.get("url") or "")
+    title = str(row.get("original_title") or "(無標題)")
+    source = str(row.get("source") or "")
+    tone, glow = _tier(score)
+
+    # Chips: only emit what carries real information.
+    chips = []
+    chip = str(row.get("chip") or "").strip()
+    if chip and chip.lower() != "none":
+        chips.append(f"<i>{escape(chip)}</i>")
+    ram, ssd = _int_or_none(row.get("ram_gb")), _int_or_none(row.get("ssd_gb"))
+    if ram and ssd:
+        ssd_txt = f"{ssd // 1024}TB" if ssd >= 1024 else f"{ssd}GB"
+        chips.append(f"<i>{ram}GB / {ssd_txt}</i>")
+    elif ram:
+        chips.append(f"<i>{ram}GB</i>")
+    elif ssd:
+        chips.append(f"<i>{ssd // 1024}TB</i>" if ssd >= 1024 else f"<i>{ssd}GB</i>")
+    if (screen := _nan_safe(row.get("screen_size"), 0)):
+        chips.append(f'<i>{float(screen):.1f}"</i>')
+    if (year := _int_or_none(row.get("release_year"))):
+        chips.append(f"<i>{year}</i>")
+    if (batt := _int_or_none(row.get("battery_health"))):
+        # Below 85% the battery is a caution, not a neutral spec.
+        chips.append(f'<i class="warn">電池 {batt}%</i>' if batt < 85 else f"<i>電池 {batt}%</i>")
+    # PTT sellers write whole sentences into the location field. Truncate with an
+    # ellipsis so it reads as shortened rather than as a chip cut off mid-word.
+    loc = str(row.get("location") or "").strip().lstrip("-— ").strip()
+    if loc and loc != "未知":
+        chips.append(f"<i>{escape(loc if len(loc) <= 12 else loc[:12] + '…')}</i>")
+
+    price = _nan_safe(row.get("price"), 0)
+    price_html = (
+        f"<s>NT$</s><b>{int(float(price)):,}</b>" if price else "<b>—</b>"
+    )
+    cta = f"前往{_SOURCE_LABELS.get(source, source or '賣場')}"
+    badge = '<span class="badge">最划算</span>' if is_top else ""
+
+    return (
+        f'<a class="deal{" deal--top" if is_top else ""}" href="{escape(url, quote=True)}"'
+        f' target="_blank" rel="noopener" title="{escape(title, quote=True)}"'
+        f' style="--tone:{tone};--tone-glow:{glow}">'
+        f'<div class="deal__score">'
+        f'<div class="deal__box"><span>{score:.0f}</span></div>'
+        f'<div class="deal__scorelabel">CP 值</div>'
+        f'</div>'
+        f'<div class="deal__body">'
+        f'<div class="deal__titlerow">{badge}<div class="deal__title">{escape(title)}</div></div>'
+        f'<div class="deal__chips">{"".join(chips)}</div>'
+        f'</div>'
+        f'<div class="deal__buy">'
+        f'<div class="deal__price">{price_html}</div>'
+        f'<div class="deal__cta">{escape(cta)}</div>'
+        f'</div>'
+        f'</a>'
+    )
+
+
 start = (current_page - 1) * PAGE_SIZE
-paginated = df.iloc[start: start + PAGE_SIZE].copy()
+paginated = df.iloc[start: start + PAGE_SIZE]
 
-paginated["CP 值"] = paginated["vfm_score"].apply(lambda s: _vfm_badge(s, p75, p50))
-
-display_cols = {
-    "url": "前往", "original_title": "標題", "chip": "晶片",
-    "ram_gb": "RAM (GB)", "ssd_gb": "SSD (GB)", "screen_size": "螢幕吋",
-    "release_year": "年份", "price": "價格 (TWD)", "location": "地區",
-    "battery_health": "電池健康", "warranty_status": "保固",
-    "condition": "成色", "CP 值": "CP 值",
-}
-avail = [c for c in display_cols if c in paginated.columns]
-display_df = paginated[avail].copy().rename(columns=display_cols)
-
-if "年份" in display_df.columns:
-    display_df["年份"] = display_df["年份"].apply(
-        lambda x: str(int(x)) if pd.notna(x) and x else "-"
-    )
-if "螢幕吋" in display_df.columns:
-    display_df["螢幕吋"] = display_df["螢幕吋"].apply(
-        lambda x: f"{float(x):.1f}\"" if pd.notna(x) and x else "-"
-    )
-
-st.dataframe(
-    display_df,
-    use_container_width=True,
-    column_config={
-        "前往":       st.column_config.LinkColumn("前往", display_text="🔗", width="small"),
-        "標題":       st.column_config.TextColumn("標題", disabled=True),
-        "晶片":       st.column_config.TextColumn("晶片", disabled=True),
-        "地區":       st.column_config.TextColumn("地區", disabled=True),
-        "保固":       st.column_config.TextColumn("保固", disabled=True),
-        "成色":       st.column_config.TextColumn("成色", disabled=True),
-        "價格 (TWD)": st.column_config.NumberColumn("價格 (TWD)", format="%d"),
-        "電池健康":   st.column_config.NumberColumn("電池健康", format="%d%%"),
-    },
-    hide_index=True,
-)
+deals = [
+    _render_deal(r.to_dict(), is_top=(current_page == 1 and i == 0))
+    for i, (_, r) in enumerate(paginated.iterrows())
+]
+st.markdown(f'<div class="deal-list">{"".join(deals)}</div>', unsafe_allow_html=True)
 
 # ── Pagination ─────────────────────────────────────────────────────────────────
 st.markdown("")
@@ -482,6 +775,28 @@ with next_col:
         st.session_state["page_num"] = current_page + 1
         st.rerun()
 st.markdown(
-    f"<div style='text-align:center;padding:4px 0;color:#94a3b8;font-size:0.8rem;'>共 {len(df)} 筆</div>",
+    f"<div style='text-align:center;padding:4px 0;color:var(--ink-400);"
+    f"font-family:var(--font-mono);font-size:12px;'>共 {len(df)} 筆</div>",
+    unsafe_allow_html=True,
+)
+
+# ── Footer ─────────────────────────────────────────────────────────────────────
+# The channel link is opt-in via SAINTECH_URL so a fork or a local run does not
+# advertise someone else's site. Icon is inline SVG — the brand uses no emoji.
+_SAINTECH_URL = (_read_secret("SAINTECH_URL") or "").strip()
+_ARROW_SVG = (
+    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="2.5" stroke-linecap="square"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>'
+)
+_link_html = (
+    f'<a href="{escape(_SAINTECH_URL, quote=True)}" target="_blank" rel="noopener">'
+    f'SainTech 頻道{_ARROW_SVG}</a>'
+    if _SAINTECH_URL else ""
+)
+st.markdown(
+    f'<div class="st-footer">'
+    f'<div>資料來源　PTT MacShop · 蝦皮購物</div>'
+    f'{_link_html}'
+    f'</div>',
     unsafe_allow_html=True,
 )

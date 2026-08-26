@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List
 
 from dotenv import load_dotenv
@@ -159,34 +159,41 @@ class DBManager:
             logger.error("DB get_alert_state error for %s: %s", url, e)
             return None
 
-    def sweep_missing(self, source: str, current_urls, min_threshold: int = 5) -> int:
-        """Mark `available` rows of the given source whose URL is NOT in current_urls as `unavailable`.
+    def sweep_stale(self, source: str, max_age_days: int = 14) -> int:
+        """Mark `available` rows of `source` not seen for `max_age_days` as `unavailable`.
 
-        Returns the number of rows updated. Skips (returns 0) when len(current_urls) < min_threshold
-        to protect against scraper-failure scenarios. Does not touch rows already in 'sold' or
-        'unavailable' status, and does not touch other sources.
+        Deliberately age-based rather than set-based. Every scraper here samples a
+        *window* rather than enumerating full inventory — PTT reads an Atom feed of
+        recent posts, Shopee reads the newest ~180 search results — so "absent from
+        this run" does not mean "delisted", it usually just means the listing scrolled
+        out of the window. The previous set-based sweep marked 46 live Shopee listings
+        unavailable in a single run because the search window had rotated completely.
+
+        Genuine sold/delisted detection stays where it belongs: PTT's title keywords
+        and Shopee's stock/grayout gatekeepers, which both inspect the listing itself.
+
+        Returns the number of rows updated. Does not touch rows already 'sold' or
+        'unavailable', and does not touch other sources.
         """
-        url_set = set(current_urls or [])
-        if len(url_set) < min_threshold:
-            logger.warning(
-                "Sweep skipped for source='%s': only %d URLs in current run (< threshold %d)",
-                source, len(url_set), min_threshold,
-            )
-            return 0
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max_age_days)
         try:
             with self.Session() as session:
                 rows = (
                     session.query(Deal)
-                    .filter(Deal.source == source, Deal.status == "available")
+                    .filter(
+                        Deal.source == source,
+                        Deal.status == "available",
+                        Deal.last_seen.isnot(None),
+                        Deal.last_seen < cutoff,
+                    )
                     .all()
                 )
-                missing = [r for r in rows if r.url not in url_set]
-                for r in missing:
+                for r in rows:
                     r.status = "unavailable"
                 session.commit()
-                return len(missing)
+                return len(rows)
         except Exception as e:
-            logger.error("DB sweep_missing error (source=%s): %s", source, e)
+            logger.error("DB sweep_stale error (source=%s): %s", source, e)
             return 0
 
     def get_all_deals(self) -> List[Dict]:
@@ -255,6 +262,7 @@ class DBManager:
                 item["original_title"] = d.title
                 item["url"] = d.url
                 item["status"] = d.status
+                item["source"] = d.source
                 result.append(item)
             return result
         except Exception as e:

@@ -15,10 +15,20 @@ except ImportError:
 from playwright.async_api import BrowserContext, Page
 
 from src.scrapers.base import BaseScraper, RawListing
+from src.scrapers.shopee_api import ShopeeAffiliateScraper, credentials_configured
 
 logger = logging.getLogger(__name__)
 
-_EXCLUDE_TITLES = ["殼", "膜", "零件機", "報廢", "充電線", "保護貼", "貼膜", "支架", "轉接"]
+
+class ShopeeSessionExpired(RuntimeError):
+    """Headless run hit the login / anti-bot wall with no usable session.
+
+    Raised rather than returning [] so the pipeline reports a hard failure —
+    a silent empty list is indistinguishable from 'no new listings today'.
+    """
+
+
+_EXCLUDE_TITLES =["殼", "膜", "零件機", "報廢", "充電線", "保護貼", "貼膜", "支架", "轉接"]
 _ITEM_URL_RE = re.compile(r"/product/(\d+)/(\d+)")
 
 
@@ -79,9 +89,24 @@ class ShopeeScraper(BaseScraper):
         return ""
 
     async def fetch_listings(self) -> list[RawListing]:
+        """Dispatch to the official affiliate API when credentials are present,
+        otherwise fall back to the browser scraper.
+
+        The switch lives here rather than in the pipeline so main.py stays free
+        of platform branching (.spec/specs/scraper/spec.md — Strategy Pattern).
+        """
+        if credentials_configured():
+            logger.info("Shopee: using Affiliate Open API (SHOPEE_APP_ID is set)")
+            return await ShopeeAffiliateScraper().fetch_listings()
+
+        logger.info("Shopee: no affiliate credentials — falling back to browser scraper")
+        return await self._fetch_listings_browser()
+
+    async def _fetch_listings_browser(self) -> list[RawListing]:
         if AsyncCamoufox is None:
-            logger.error("camoufox is not installed. Run: pip install camoufox && python -m camoufox fetch")
-            return []
+            raise RuntimeError(
+                "camoufox is not installed. Run: pip install camoufox && python -m camoufox fetch"
+            )
 
         results: list[RawListing] = []
         self._current_calls = 0
@@ -106,11 +131,12 @@ class ShopeeScraper(BaseScraper):
 
                 if "login" in page.url or not items_p1:
                     if self._headless:
-                        logger.error(
-                            "Login required but SHOPEE_HEADLESS=true — "
-                            "run once with SHOPEE_HEADLESS=false to establish a session"
+                        raise ShopeeSessionExpired(
+                            f"Shopee login / anti-bot wall hit at {page.url} with SHOPEE_HEADLESS=true. "
+                            f"Session at {self._state_path} is missing or expired — "
+                            "re-run once with SHOPEE_HEADLESS=false to log in, "
+                            "or configure SHOPEE_APP_ID / SHOPEE_APP_SECRET to use the affiliate API."
                         )
-                        return []
 
                     print("\n=======================================================")
                     print("[ShopeeScraper] Login / anti-bot wall triggered!")
@@ -173,6 +199,8 @@ class ShopeeScraper(BaseScraper):
                     if shop_id:
                         shop_listing_count[shop_id] = shop_listing_count.get(shop_id, 0) + len(item_listings)
 
+            except ShopeeSessionExpired:
+                raise  # let the pipeline report a hard failure, not an empty run
             except Exception as e:
                 logger.error("fetch_listings error: %s", e)
             finally:
@@ -321,11 +349,6 @@ class ShopeeScraper(BaseScraper):
 
                 desc = item_data.get("description", "")[:800]
                 models = item_data.get("models") or item_data.get("model_list") or []
-
-                if "27090124716" in url:
-                    import json
-                    with open("scratch/debug_27090124716.json", "w", encoding="utf-8") as f:
-                        json.dump(item_data, f, ensure_ascii=False, indent=2)
 
                 if not models:
                     # Parent stock fallback

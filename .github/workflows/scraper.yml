@@ -22,8 +22,23 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Install Playwright Chromium with system dependencies
-        run: playwright install chromium --with-deps
+      # Only PTT runs here. The browser-based Shopee scraper cannot work on a
+      # GitHub runner: Shopee blocks datacenter IPs, the login session cannot be
+      # carried onto an ephemeral runner, and camoufox has no browser installed.
+      # Shopee is included only when affiliate API credentials are available,
+      # since that path is plain signed HTTP with no anti-bot wall.
+      - name: Decide which sources to scrape
+        id: sources
+        env:
+          SHOPEE_APP_ID: ${{ secrets.SHOPEE_APP_ID }}
+        run: |
+          if [ -n "$SHOPEE_APP_ID" ]; then
+            echo "value=all" >> "$GITHUB_OUTPUT"
+            echo "Shopee affiliate credentials found -> scraping ptt + shopee"
+          else
+            echo "value=ptt" >> "$GITHUB_OUTPUT"
+            echo "No Shopee affiliate credentials -> scraping ptt only"
+          fi
 
       - name: Run scraper pipeline
         env:
@@ -31,5 +46,6 @@ jobs:
           GEMINI_API_KEY:        ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
           ALERT_VFM_THRESHOLD:   ${{ secrets.ALERT_VFM_THRESHOLD }}
-          SHOPEE_HEADLESS:       "true"
-        run: python -m src.main
+          SHOPEE_APP_ID:         ${{ secrets.SHOPEE_APP_ID }}
+          SHOPEE_APP_SECRET:     ${{ secrets.SHOPEE_APP_SECRET }}
+        run: python -m src.main --source ${{ steps.sources.outputs.value }}

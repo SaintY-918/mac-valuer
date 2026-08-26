@@ -2,18 +2,20 @@
 
 ## 本專案使用 OpenSpec 管理規格
 
-所有架構規格、資料模型、欄位定義、公式細節均存放於 `openspec/specs/` 下對應模組：
+所有架構規格、資料模型、欄位定義、公式細節均存放於 `.spec/specs/` 下對應模組：
 
-| 模組 | 規格文件 |
-|------|---------|
-| 資料庫策略、Schema、upsert 規則 | `openspec/specs/database/spec.md` |
-| 爬蟲介面（Strategy Pattern）、PTT 實作 | `openspec/specs/scraper/spec.md` |
-| MacBookSpec、ScoringWeights、RawListing | `openspec/specs/data-models/spec.md` |
-| LLM Parser、Prompt schema、Regex fallback | `openspec/specs/llm-parser/spec.md` |
-| VFM 公式、晶片基準分、形態加成、顏色閾值 | `openspec/specs/score-engine/spec.md` |
-| FastAPI endpoints、Dashboard 與 API 的關係 | `openspec/specs/api/spec.md` |
+| 模組 | 規格文件 | 狀態 |
+|------|---------|------|
+| 爬蟲介面（Strategy Pattern）、PTT／蝦皮實作 | `.spec/specs/scraper/spec.md` | ✅ 已撰寫 |
+| 資料庫策略、Schema、upsert 規則 | `.spec/specs/database/spec.md` | ⬜ 尚未撰寫 |
+| MacBookSpec、ScoringWeights、RawListing | `.spec/specs/data-models/spec.md` | ⬜ 尚未撰寫 |
+| LLM Parser、Prompt schema、Regex fallback | `.spec/specs/llm-parser/spec.md` | ⬜ 尚未撰寫 |
+| VFM 公式、晶片基準分、形態加成、顏色閾值 | `.spec/specs/score-engine/spec.md` | ⬜ 尚未撰寫 |
+| FastAPI endpoints、Dashboard 與 API 的關係、卡片呈現規範 | `.spec/specs/api/spec.md` | ✅ 已撰寫 |
 
-開發歷程（Phase Plan、已知問題修復）：`openspec/changelog.md`
+尚未撰寫的模組以現有程式碼為準；動到該模組時應順手補上 spec。
+
+輔助文件：`docs/ptt-scraper-logic.md`、`docs/skills/`（新增爬蟲、調整 VFM 公式的操作指引）。
 
 ---
 
