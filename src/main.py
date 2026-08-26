@@ -18,7 +18,11 @@ from src.scrapers.ptt import PTTScraper
 from src.scrapers.shopee import ShopeeScraper
 
 DEFAULT_ALERT_VFM_THRESHOLD = 500.0
-SWEEP_MIN_THRESHOLD = 5
+
+# A listing is retired only after this many days without being seen again. Both
+# scrapers read a rolling window, not full inventory, so "missing from this run"
+# is not evidence a listing is gone — see DBManager.sweep_stale.
+STALE_DAYS = int(os.getenv("STALE_DAYS", "14"))
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -54,39 +58,47 @@ def _read_alert_threshold() -> float:
         return DEFAULT_ALERT_VFM_THRESHOLD
 
 
-def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
+def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scrape: bool = False):
     db = DBManager()
 
-    print(f"=== Step 1: Fetching from scrapers (source={source}) ===")
-    all_scrapers = {"ptt": PTTScraper(), "shopee": ShopeeScraper()}
-    scrapers = [all_scrapers[source]] if source != "all" else list(all_scrapers.values())
     raw_listings = []
     urls_seen_by_source: dict[str, set[str]] = defaultdict(set)
     sources_attempted: set[str] = set()
     upsert_counts: dict[str, int] = defaultdict(int)
-    for scraper in scrapers:
-        src_name = "shopee" if isinstance(scraper, ShopeeScraper) else "ptt"
-        sources_attempted.add(src_name)
-        try:
-            listings = asyncio.run(scraper.fetch_listings())
-            raw_listings.extend(listings)
-            for lst in listings:
-                if lst and lst.url:
-                    urls_seen_by_source[src_name].add(lst.url)
-        except Exception as e:
-            logger.error("Scraper %s failed: %s", type(scraper).__name__, e)
+    # source -> error string. A source in here failed outright; its 0 count means
+    # "broken", not "nothing new today".
+    source_errors: dict[str, str] = {}
 
-    for listing in raw_listings:
-        src = listing.source or "ptt"
-        existing = db.get_cached_deal(listing.url)
-        if not existing:
-            db.save_deal(listing.url, listing.title, listing.body_content,
-                         status=listing.status, source=listing.source)
-            upsert_counts[src] += 1
-        elif listing.status == "sold" and existing.get("status") != "sold":
-            db.save_deal(listing.url, listing.title, listing.body_content,
-                         status="sold", source=listing.source)
-            upsert_counts[src] += 1
+    if skip_scrape:
+        print("=== Step 1: Skipped (--skip-scrape) — reusing existing DB data ===")
+    else:
+        print(f"=== Step 1: Fetching from scrapers (source={source}) ===")
+        all_scrapers = {"ptt": PTTScraper(), "shopee": ShopeeScraper()}
+        scrapers = [all_scrapers[source]] if source != "all" else list(all_scrapers.values())
+        for scraper in scrapers:
+            src_name = "shopee" if isinstance(scraper, ShopeeScraper) else "ptt"
+            sources_attempted.add(src_name)
+            try:
+                listings = asyncio.run(scraper.fetch_listings())
+                raw_listings.extend(listings)
+                for lst in listings:
+                    if lst and lst.url:
+                        urls_seen_by_source[src_name].add(lst.url)
+            except Exception as e:
+                logger.error("Scraper %s failed: %s", type(scraper).__name__, e)
+                source_errors[src_name] = f"{type(e).__name__}: {e}"
+
+        for listing in raw_listings:
+            src = listing.source or "ptt"
+            existing = db.get_cached_deal(listing.url)
+            if not existing:
+                db.save_deal(listing.url, listing.title, listing.body_content,
+                             status=listing.status, source=listing.source)
+                upsert_counts[src] += 1
+            elif listing.status == "sold" and existing.get("status") != "sold":
+                db.save_deal(listing.url, listing.title, listing.body_content,
+                             status="sold", source=listing.source)
+                upsert_counts[src] += 1
 
     if dry_run:
         print(f"\n=== DRY-RUN: {len(raw_listings)} listings survived scraper filters ===")
@@ -217,16 +229,20 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False):
 
     # Step 6: Sweep — mark URLs that disappeared from this run as 'unavailable'.
     for src_name in sources_attempted:
-        seen = urls_seen_by_source.get(src_name, set())
-        n = db.sweep_missing(src_name, seen, min_threshold=SWEEP_MIN_THRESHOLD)
-        logger.info("Sweep result: source='%s' marked_unavailable=%d (saw %d urls)",
-                    src_name, n, len(seen))
+        if src_name in source_errors:
+            # The source errored out, so nothing was refreshed and every row looks
+            # stale. Sweeping now would mark the whole source unavailable.
+            logger.warning("Sweep skipped for source='%s': scraper failed this run", src_name)
+            continue
+        n = db.sweep_stale(src_name, max_age_days=STALE_DAYS)
+        logger.info("Sweep result: source='%s' marked_unavailable=%d (unseen for >%d days, saw %d urls)",
+                    src_name, n, STALE_DAYS, len(urls_seen_by_source.get(src_name, set())))
 
     # Step 7: Heartbeat — send daily run summary to Discord.
     try:
         send_heartbeat({
-            "ptt": upsert_counts.get("ptt", 0),
-            "shopee": upsert_counts.get("shopee", 0),
+            "counts": {src: upsert_counts.get(src, 0) for src in sorted(sources_attempted)},
+            "errors": source_errors,
             "alerts_sent": alerts_sent,
         })
     except Exception as e:
@@ -275,5 +291,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", choices=["ptt", "shopee", "all"], default="all")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--skip-scrape", action="store_true",
+                         help="Skip Step 1 (scraping) and reuse existing DB data — for testing repair/scoring/notifier without hitting network scrapers or LLM quota on new listings.")
     args = parser.parse_args()
-    run_valuation_pipeline(source=args.source, dry_run=args.dry_run)
+    run_valuation_pipeline(source=args.source, dry_run=args.dry_run, skip_scrape=args.skip_scrape)

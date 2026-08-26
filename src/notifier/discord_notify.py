@@ -31,22 +31,38 @@ def _format_message(deal: Dict) -> str:
     )
 
 
+_SOURCE_LABELS = {"ptt": "PTT", "shopee": "蝦皮", "carousell": "旋轉拍賣"}
+
+
+def _label(source: str) -> str:
+    return _SOURCE_LABELS.get(source, source)
+
+
 def send_heartbeat(stats: dict) -> None:
-    """Send a daily pipeline summary to Discord. Silent no-op if webhook URL is unset."""
+    """Send a daily pipeline summary to Discord. Silent no-op if webhook URL is unset.
+
+    A source that errored is reported as ⛔ with its reason — never as "0 筆",
+    which is indistinguishable from a genuinely quiet day and hid a completely
+    broken Shopee scraper for weeks.
+    """
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
     if not webhook_url:
         return
 
-    ptt_count = stats.get("ptt", 0)
-    shopee_count = stats.get("shopee", 0)
+    counts: dict = stats.get("counts") or {}
+    errors: dict = stats.get("errors") or {}
     alerts_sent = stats.get("alerts_sent", 0)
 
-    content = (
-        "✅ **每日爬蟲巡邏完畢**\n"
-        f"- PTT：新增/更新 **{ptt_count}** 筆\n"
-        f"- Shopee：新增/更新 **{shopee_count}** 筆\n"
-        f"- 觸發警報：**{alerts_sent}** 筆"
-    )
+    lines = []
+    for source in sorted(set(counts) | set(errors)):
+        if source in errors:
+            reason = str(errors[source]).replace("\n", " ")[:180]
+            lines.append(f"- ⛔ {_label(source)}：**爬取失敗** — `{reason}`")
+        else:
+            lines.append(f"- ✅ {_label(source)}：新增/更新 **{counts.get(source, 0)}** 筆")
+
+    header = "⚠️ **每日爬蟲巡邏 — 有來源失敗**" if errors else "✅ **每日爬蟲巡邏完畢**"
+    content = "\n".join([header, *lines, f"- 觸發警報：**{alerts_sent}** 筆"])
     try:
         resp = requests.post(webhook_url, json={"content": content}, timeout=HTTP_TIMEOUT_SECONDS)
         if not (200 <= resp.status_code < 300):
