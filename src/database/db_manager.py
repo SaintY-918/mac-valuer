@@ -262,6 +262,7 @@ class DBManager:
                 item["original_title"] = d.title
                 item["url"] = d.url
                 item["status"] = d.status
+                item["source"] = d.source
                 result.append(item)
             return result
         except Exception as e:

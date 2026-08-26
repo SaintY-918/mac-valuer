@@ -11,7 +11,7 @@
 | MacBookSpec、ScoringWeights、RawListing | `.spec/specs/data-models/spec.md` | ⬜ 尚未撰寫 |
 | LLM Parser、Prompt schema、Regex fallback | `.spec/specs/llm-parser/spec.md` | ⬜ 尚未撰寫 |
 | VFM 公式、晶片基準分、形態加成、顏色閾值 | `.spec/specs/score-engine/spec.md` | ⬜ 尚未撰寫 |
-| FastAPI endpoints、Dashboard 與 API 的關係 | `.spec/specs/api/spec.md` | ⬜ 尚未撰寫 |
+| FastAPI endpoints、Dashboard 與 API 的關係、卡片呈現規範 | `.spec/specs/api/spec.md` | ✅ 已撰寫 |
 
 尚未撰寫的模組以現有程式碼為準；動到該模組時應順手補上 spec。
 

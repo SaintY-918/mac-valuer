@@ -1,6 +1,7 @@
 import datetime
 import os
 from datetime import timedelta
+from html import escape
 
 import numpy as np
 import pandas as pd
@@ -76,15 +77,6 @@ def _recalc_vfm(row: dict, w: dict) -> float:
     return round(base * depr * ram_m * ssd_m * form_m / price * 1000, 2)
 
 
-def _vfm_badge(score: float, p75: float, p50: float) -> str:
-    if score >= p75:
-        return f"🟢 {score:.2f}"
-    elif score >= p50:
-        return f"🟡 {score:.2f}"
-    else:
-        return f"🔴 {score:.2f}"
-
-
 @st.cache_resource
 def _get_db() -> DBManager:
     return DBManager()
@@ -95,7 +87,25 @@ st.set_page_config(page_title="mac-valuer | 二手 MacBook 估價", page_icon=":
 
 st.markdown("""
 <style>
-[data-testid="stMetric"] { background:#1e1e2e; border-radius:10px; padding:12px 16px; }
+/* ── Design tokens ──────────────────────────────────────────────────────────
+   The dashboard is an instrument, not a shop: the VFM readout is the subject
+   of every card and everything else is subordinate scale markings. Numerics
+   are monospaced so figures line up down a column and stay comparable. */
+:root {
+    --surface:      #171725;
+    --surface-hi:   #1e1e30;
+    --border:       #2a2a3e;
+    --border-hi:    #3d3d57;
+    --text:         #e8e8f0;
+    --text-dim:     #94a3b8;
+    --text-faint:   #64748b;
+    --vfm-good:     #4ade80;
+    --vfm-mid:      #fbbf24;
+    --vfm-poor:     #f87171;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+[data-testid="stMetric"] { background: var(--surface); border-radius:10px; padding:12px 16px; }
 [data-testid="stSidebarContent"] { background:#16162a; }
 
 div[data-testid="stHorizontalBlock"] .page-btn button {
@@ -103,20 +113,206 @@ div[data-testid="stHorizontalBlock"] .page-btn button {
     font-weight: 600;
 }
 
-a.deal-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, #3b82f6, #6366f1);
-    color: white !important;
-    font-size: 0.82rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: opacity .15s;
+/* ── Deal card grid ─────────────────────────────────────────────────────────
+   Explicit column counts rather than auto-fill + minmax. The sidebar eats a
+   variable slice of the viewport, which left only a 2px window of minmax values
+   that produced 3 columns on desktop AND 2 on tablet — any change to Streamlit's
+   padding would have silently flipped the layout. Breakpoints say what we mean.
+   Measured grid widths with the sidebar open: 1440px viewport -> 980px grid,
+   820px -> 488px, 390px -> 358px. */
+.deal-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 4px 0 18px;
 }
-a.deal-link:hover { opacity: 0.82; }
+@media (min-width: 700px)  { .deal-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1200px) { .deal-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1800px) { .deal-grid { grid-template-columns: repeat(4, 1fr); } }
+
+.deal-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px 14px 19px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    text-decoration: none !important;
+    color: var(--text) !important;
+    overflow: hidden;
+    transition: border-color .16s ease, transform .16s ease, background .16s ease;
+}
+/* Accent rail carries the VFM verdict before any number is read. */
+.deal-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--tier);
+}
+.deal-card:hover {
+    border-color: var(--border-hi);
+    background: var(--surface-hi);
+    transform: translateY(-2px);
+}
+/* Pointer-only: a phone has no hover, and the lift would fire on tap. */
+@media (hover: none) {
+    .deal-card:hover { transform: none; background: var(--surface); border-color: var(--border); }
+}
+
+/* Rank 1 on page 1 is the answer to the question the product asks, so it gets
+   width instead of a badge — but only where there are columns to spare. */
+@media (min-width: 900px) {
+    .deal-card--top { grid-column: span 2; }
+}
+
+.deal-card__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+.deal-card__vfm {
+    font-family: var(--mono);
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--tier);
+}
+.deal-card__vfm span {
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    margin-left: 5px;
+}
+.deal-card__src {
+    flex-shrink: 0;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border-hi);
+    color: var(--text-dim);
+}
+
+.deal-card__title {
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text);
+    /* Always two lines tall, clamped: keeps the spec row at the same height in
+       every card so the grid reads as a comparison table, not a ragged pile. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+    min-height: 2.4em;
+}
+
+.deal-card__specs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.deal-card__specs b {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #ffffff0a;
+    color: var(--text-dim);
+}
+.deal-card__specs b.chip { color: var(--text); background: #ffffff14; }
+
+.deal-card__foot {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 9px;
+    border-top: 1px solid var(--border);
+}
+.deal-card__price {
+    font-family: var(--mono);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+}
+.deal-card__price s {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-faint);
+    margin-right: 3px;
+    text-decoration: none;
+}
+.deal-card__meta {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-align: right;
+    /* PTT sellers write whole sentences into the location field; without this
+       one listing's "面交地點:林口家樂福 / 雙北各捷運站…" sets the row height. */
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Stat row ───────────────────────────────────────────────────────────────
+   Colours are set explicitly: inheriting left the figures at the muted
+   markdown colour, so the numbers read dimmer than their own labels. */
+.stat-row { display: flex; flex-wrap: nowrap; gap: 10px; margin: 6px 0 10px; }
+.stat {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 9px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.stat--wide { flex: 1.7 1 0; }
+.stat span {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+    white-space: nowrap;
+}
+.stat b {
+    font-family: var(--mono);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.vfm-legend {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding: 2px 0 8px; font-size: 0.82rem; color: var(--text-dim);
+}
+.vfm-legend i { font-style: normal; font-weight: 700; }
+
+/* ── Mobile: the header used to eat the whole first screen ──────────────────
+   At 390x900 the title, three stacked stat boxes and a wrapped legend pushed
+   the first deal card past 1150px, so a phone user landed on a page with no
+   deals visible at all. Shrink the chrome so cards start above the fold. */
+@media (max-width: 640px) {
+    h1 { font-size: 1.5rem !important; line-height: 1.25 !important; }
+    .stat { padding: 7px 10px; border-radius: 8px; }
+    .stat span { font-size: 0.62rem; }
+    .stat b { font-size: 0.86rem; }
+    .stat--wide b { font-size: 0.7rem; }
+    .vfm-legend { gap: 7px; font-size: 0.72rem; }
+    .deal-grid { gap: 10px; }
+    .block-container { padding-top: 2.2rem !important; }
+}
 
 /* Keep pagination row horizontal on all screen sizes */
 [data-testid="stHorizontalBlock"] {
@@ -312,29 +508,20 @@ _price_range = (
     f"{int(prices.min()):,} ~ {int(prices.max()):,} 元" if len(prices) else "—"
 )
 st.markdown(f"""
-<div style="display:flex;flex-wrap:wrap;gap:12px;margin:8px 0 12px;">
-  <div style="background:#1e1e2e;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
-    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">符合物件</div>
-    <div style="font-size:1.4rem;font-weight:700;">{len(df)} 筆</div>
-  </div>
-  <div style="background:#1e1e2e;border-radius:10px;padding:10px 18px;flex:2;min-width:160px;">
-    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">價格區間</div>
-    <div style="font-size:1.1rem;font-weight:700;">{_price_range}</div>
-  </div>
-  <div style="background:#1e1e2e;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
-    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">最近新增</div>
-    <div style="font-size:1.4rem;font-weight:700;">+{_new_count} 筆</div>
-  </div>
+<div class="stat-row">
+  <div class="stat"><span>符合物件</span><b>{len(df)} 筆</b></div>
+  <div class="stat stat--wide"><span>價格區間</span><b>{_price_range}</b></div>
+  <div class="stat"><span>最近新增</span><b>+{_new_count} 筆</b></div>
 </div>
 """, unsafe_allow_html=True)
 
 # ── 性價比圖例 ───────────────────────────────────────────────────────────────
 st.markdown("""
-<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:4px 0 8px;font-size:0.85rem;color:#94a3b8;">
+<div class="vfm-legend">
   <span style="font-weight:600;color:#cbd5e1;">性價比</span>
-  <span>🟢 <b>優秀</b>（前 25%）</span>
-  <span>🟡 <b>普通</b>（前 50%）</span>
-  <span>🔴 <b>偏貴</b>（後 50%）</span>
+  <span>🟢 <i>優秀</i>（前 25%）</span>
+  <span>🟡 <i>普通</i>（前 50%）</span>
+  <span>🔴 <i>偏貴</i>（後 50%）</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -408,7 +595,7 @@ with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
 
 st.markdown("")
 
-# ── Table header ───────────────────────────────────────────────────────────────
+# ── Pagination state ───────────────────────────────────────────────────────────
 PAGE_SIZE = 20
 
 if "page_num" not in st.session_state:
@@ -419,46 +606,79 @@ current_page = int(st.session_state.get("page_num", 1))
 current_page = max(1, min(current_page, max_pages))
 
 
-# ── Data table ─────────────────────────────────────────────────────────────────
+# ── Deal cards ─────────────────────────────────────────────────────────────────
+# Rendered as one HTML block rather than st.dataframe: a 13-column table is
+# unreadable below ~700px and st.dataframe exposes almost no styling control.
+_SOURCE_LABELS = {"ptt": "PTT", "shopee": "蝦皮", "carousell": "旋轉"}
+
+
+def _tier_color(score: float) -> str:
+    if score >= p75:
+        return "var(--vfm-good)"
+    return "var(--vfm-mid)" if score >= p50 else "var(--vfm-poor)"
+
+
+def _int_or_none(val):
+    v = _nan_safe(val, 0)
+    try:
+        return int(float(v)) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def _render_card(row: dict, is_top: bool) -> str:
+    score = float(row.get("vfm_score") or 0)
+    url = str(row.get("url") or "")
+    title = str(row.get("original_title") or "(無標題)")
+    source = str(row.get("source") or "")
+
+    # Specs: only emit chips that carry real information.
+    specs = []
+    chip = str(row.get("chip") or "").strip()
+    if chip and chip.lower() != "none":
+        specs.append(f'<b class="chip">{escape(chip)}</b>')
+    if (ram := _int_or_none(row.get("ram_gb"))):
+        specs.append(f"<b>{ram}GB</b>")
+    if (ssd := _int_or_none(row.get("ssd_gb"))):
+        specs.append(f"<b>{ssd // 1024}TB</b>" if ssd >= 1024 else f"<b>{ssd}GB</b>")
+    screen = _nan_safe(row.get("screen_size"), 0)
+    if screen:
+        specs.append(f'<b>{float(screen):.1f}"</b>')
+    if (batt := _int_or_none(row.get("battery_health"))):
+        specs.append(f"<b>🔋{batt}%</b>")
+
+    # Footer right: year and location, whichever are known.
+    meta = [str(v) for v in (_int_or_none(row.get("release_year")), row.get("location")) if v and str(v) != "未知"]
+
+    price = _nan_safe(row.get("price"), 0)
+    price_html = f"<s>NT$</s>{int(float(price)):,}" if price else "—"
+
+    return (
+        f'<a class="deal-card{" deal-card--top" if is_top else ""}" href="{escape(url, quote=True)}"'
+        f' target="_blank" rel="noopener" title="{escape(title, quote=True)}"'
+        f' style="--tier:{_tier_color(score)}">'
+        f'<div class="deal-card__head">'
+        f'<div class="deal-card__vfm">{score:.0f}<span>CP</span></div>'
+        f'<div class="deal-card__src">{escape(_SOURCE_LABELS.get(source, source or "?"))}</div>'
+        f'</div>'
+        f'<div class="deal-card__title">{escape(title)}</div>'
+        f'<div class="deal-card__specs">{"".join(specs)}</div>'
+        f'<div class="deal-card__foot">'
+        f'<div class="deal-card__price">{price_html}</div>'
+        f'<div class="deal-card__meta">{escape(" · ".join(meta))}</div>'
+        f'</div>'
+        f'</a>'
+    )
+
+
 start = (current_page - 1) * PAGE_SIZE
-paginated = df.iloc[start: start + PAGE_SIZE].copy()
+paginated = df.iloc[start: start + PAGE_SIZE]
 
-paginated["CP 值"] = paginated["vfm_score"].apply(lambda s: _vfm_badge(s, p75, p50))
-
-display_cols = {
-    "url": "前往", "original_title": "標題", "chip": "晶片",
-    "ram_gb": "RAM (GB)", "ssd_gb": "SSD (GB)", "screen_size": "螢幕吋",
-    "release_year": "年份", "price": "價格 (TWD)", "location": "地區",
-    "battery_health": "電池健康", "warranty_status": "保固",
-    "condition": "成色", "CP 值": "CP 值",
-}
-avail = [c for c in display_cols if c in paginated.columns]
-display_df = paginated[avail].copy().rename(columns=display_cols)
-
-if "年份" in display_df.columns:
-    display_df["年份"] = display_df["年份"].apply(
-        lambda x: str(int(x)) if pd.notna(x) and x else "-"
-    )
-if "螢幕吋" in display_df.columns:
-    display_df["螢幕吋"] = display_df["螢幕吋"].apply(
-        lambda x: f"{float(x):.1f}\"" if pd.notna(x) and x else "-"
-    )
-
-st.dataframe(
-    display_df,
-    use_container_width=True,
-    column_config={
-        "前往":       st.column_config.LinkColumn("前往", display_text="🔗", width="small"),
-        "標題":       st.column_config.TextColumn("標題", disabled=True),
-        "晶片":       st.column_config.TextColumn("晶片", disabled=True),
-        "地區":       st.column_config.TextColumn("地區", disabled=True),
-        "保固":       st.column_config.TextColumn("保固", disabled=True),
-        "成色":       st.column_config.TextColumn("成色", disabled=True),
-        "價格 (TWD)": st.column_config.NumberColumn("價格 (TWD)", format="%d"),
-        "電池健康":   st.column_config.NumberColumn("電池健康", format="%d%%"),
-    },
-    hide_index=True,
-)
+cards = [
+    _render_card(r.to_dict(), is_top=(current_page == 1 and i == 0))
+    for i, (_, r) in enumerate(paginated.iterrows())
+]
+st.markdown(f'<div class="deal-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 # ── Pagination ─────────────────────────────────────────────────────────────────
 st.markdown("")

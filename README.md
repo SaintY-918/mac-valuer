@@ -166,10 +166,14 @@ python -m src.main --skip-scrape     # 不爬蟲，直接修復＋評分＋送�
 ### 啟動 Streamlit Dashboard
 
 ```bash
-streamlit run src/dashboard.py
+streamlit run streamlit_app.py
 ```
 
-Dashboard 直連 `DATABASE_URL` 指定的資料庫（本地 SQLite 或 Neon PostgreSQL）。
+必須從根目錄的 `streamlit_app.py` 進入。直接跑 `streamlit run src/dashboard.py` 會因為 repo 根目錄不在 `sys.path` 而拋 `ModuleNotFoundError: No module named 'src'`。
+
+Dashboard 直連 `DATABASE_URL` 指定的資料庫（本地 SQLite 或 Neon PostgreSQL），不經過 FastAPI。
+
+物件以響應式卡片呈現：視窗 ≥1800px 四欄、≥1200px 三欄、≥700px 兩欄、手機單欄。呈現規範見 [`.spec/specs/api/spec.md`](.spec/specs/api/spec.md)。
 
 ### 啟動 FastAPI 伺服器（本地開發用）
 
