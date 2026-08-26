@@ -10,7 +10,10 @@ import streamlit as st
 # ── DATABASE_URL injection ─────────────────────────────────────────────────────
 # Streamlit Community Cloud provides secrets via st.secrets; fall back to env var
 # for local development. Must happen before DBManager is first imported/used.
-_db_url = st.secrets.get("DATABASE_URL") if hasattr(st, "secrets") else None
+try:
+    _db_url = st.secrets.get("DATABASE_URL")
+except st.errors.StreamlitSecretNotFoundError:
+    _db_url = None
 if not _db_url:
     _db_url = os.getenv("DATABASE_URL")
 if _db_url:
