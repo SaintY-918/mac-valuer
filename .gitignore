@@ -26,3 +26,6 @@ shopee_state.json
 .shopee_state.json
 shopee_dom.html
 shopee_headless.png
+
+# Local scheduled-run logs
+logs/
