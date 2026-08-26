@@ -1,7 +1,7 @@
 # Skill：新增平台爬蟲
 
 > 適用情境：想新增蝦皮、臉書社團、露天等平台的二手機資料來源。
-> 閱讀 spec 前置：`openspec/specs/scraper/spec.md`
+> 閱讀 spec 前置：`.spec/specs/scraper/spec.md`
 
 ---
 
