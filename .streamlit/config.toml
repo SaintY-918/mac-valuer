@@ -1,0 +1,43 @@
+# SainTech Design System — Streamlit theme
+#
+# The brand lives here rather than in CSS overrides. Painting .stApp dark with
+# injected CSS left Streamlit itself on its light theme: headings stayed
+# rgb(49,51,63) on a dark background and every widget kept light-theme styling.
+# Setting the real theme makes Streamlit's own controls adopt the brand instead
+# of being fought with selectors.
+#
+# Values are lifted verbatim from the design system project
+# (tokens/colors.css, typography.css, layout.css).
+
+[theme]
+base = "dark"
+
+primaryColor           = "#1F48FF"   # --blue-500, core brand
+backgroundColor        = "#0A0E1A"   # --ink-900
+secondaryBackgroundColor = "#11162A" # --ink-800
+textColor              = "#C7CCD8"   # --text-body
+borderColor            = "#1B2238"   # --border-subtle
+linkColor              = "#15E0FF"   # --cyan-500, "new / live / highlight"
+
+# Semantic scale doubles as the VFM verdict bands.
+greenColor  = "#16C76A"
+orangeColor = "#FFB020"
+redColor    = "#FF3B47"
+
+# Archivo 900 for display, Noto Sans TC for Han body, JetBrains Mono for
+# specs/prices/model numbers. Streamlit loads each from the Google Fonts CSS.
+font        = "Noto Sans TC:https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap"
+headingFont = "Archivo:https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;800;900&display=swap"
+codeFont    = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap"
+
+# "The brand never whispers" — display weight is Archivo 900 for h1/h2,
+# stepping down for the smaller headings.
+headingFontWeights = [900, 900, 800, 700, 700, 700]
+
+# "Hardware feels squared, not bubbly" — radii stay small-to-medium.
+baseRadius   = "10px"
+buttonRadius = "10px"
+
+[theme.sidebar]
+backgroundColor = "#11162A"
+borderColor     = "#1B2238"

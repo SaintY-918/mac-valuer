@@ -1,0 +1,23 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html",   "title": "桌機 1240px", "x": 0,    "y": 0,  "w": 1240, "h": 1000 },
+    { "file": "Mobile.dc.html", "title": "手機 390px",  "x": 1360, "y": 0,  "w": 390,  "h": 844 }
+  ],
+  "annotations": [
+    {
+      "id": "note-brand",
+      "x": 0,
+      "y": -186,
+      "w": 1240,
+      "text": "B 版面 × SainTech Design System\n\n沿用你設計系統裡的實際數值，不是我另外調的：品牌藍 #1F48FF、電光青 #15E0FF 用在「今日新增」、語意色 #16C76A / #FFB020 / #FF3B47 對應 CP 值三級距。\nArchivo 900 標題、Noto Sans TC 內文、JetBrains Mono 一律用在規格與價格（你的 tokens 明訂 mono 給 specs / prices / model numbers）。8px 間距、卡片 16px 圓角、按鈕 2px 邊框。\n\nCP 值徽章直接沿用 ScorePill 的結構：方框 + 3px 語意色邊框 + 同色 glow + 下方大寫標籤。差別是拿掉了 /max —— VFM 沒有固定上限。\n最上方的斜紋來自 base.css 的 .st-speed-stripes（S 動勢motif）。"
+    },
+    {
+      "id": "note-mobile",
+      "x": 1360,
+      "y": -186,
+      "w": 390,
+      "text": "手機版\n\n同一套品牌，改為直式：CP 徽章與標題同一列，規格膠囊獨立一行，價格與按鈕在底部分列兩端。\n\n按鈕 min-height 44px，符合觸控目標下限。"
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
