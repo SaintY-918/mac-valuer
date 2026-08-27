@@ -9,7 +9,7 @@
 | 爬蟲介面（Strategy Pattern）、PTT／蝦皮實作 | `.spec/specs/scraper/spec.md` | ✅ 已撰寫 |
 | 資料庫策略、Schema、upsert 規則 | `.spec/specs/database/spec.md` | ⬜ 尚未撰寫 |
 | MacBookSpec、ScoringWeights、RawListing | `.spec/specs/data-models/spec.md` | ⬜ 尚未撰寫 |
-| LLM Parser、Prompt schema、Regex fallback | `.spec/specs/llm-parser/spec.md` | ⬜ 尚未撰寫 |
+| LLM Parser、Regex 抽取規則、資料修復 | `.spec/specs/llm-parser/spec.md` | ✅ 已撰寫 |
 | VFM 公式、晶片基準分、形態加成、顏色閾值 | `.spec/specs/score-engine/spec.md` | ⬜ 尚未撰寫 |
 | FastAPI endpoints、Dashboard 與 API 的關係、卡片呈現規範 | `.spec/specs/api/spec.md` | ✅ 已撰寫 |
 

@@ -66,31 +66,73 @@ def extract_screen_size_from_text(text: str) -> Optional[float]:
 
     return None
 
-def extract_specs_from_text(text: str) -> tuple:
-    """Priority 1: Slash patterns (e.g., 16/512). Returns (ram, ssd)."""
-    text = preprocess_text(text)
-    matches = re.findall(r'(\d+)(?:G|GB|gb)?\s*/\s*(\d+)(?:G|GB|gb|T|TB|t|tb)?', text)
-    
-    if not matches:
-        ram_match = re.search(r'\b(8|16|18|24|32|36|48|64|96|128)\s*(?:G|GB|gb|RAM|記憶體)\b', text, re.I)
-        ssd_match = re.search(r'\b(128|256|512|1024|2048)\s*(?:G|GB|gb|SSD|硬碟)\b', text, re.I)
-        if not ssd_match:
-            ssd_match = re.search(r'\b(1|2|4|8)\s*(?:T|TB|tb)\b', text, re.I)
-        
-        ram = int(ram_match.group(1)) if ram_match else None
-        ssd = None
-        if ssd_match:
-            val = int(ssd_match.group(1))
-            ssd = val * 1024 if val < 10 else val
-        return ram, ssd
+# Configurations Apple has actually shipped. Anything outside these is a
+# misread, not an exotic build — validating against them is what stops a GPU
+# core count becoming a RAM size.
+_VALID_RAM = {8, 16, 18, 24, 32, 36, 48, 64, 96, 128}
+_VALID_SSD = {128, 256, 512, 1024, 2048, 4096, 8192}
 
-    for r_str, s_str in matches:
-        r, s = int(r_str), int(s_str)
-        if 8 <= r <= 128 and (s >= 128 or s <= 8):
-            ssd = s * 1024 if s <= 8 else s
-            return r, ssd
-            
-    return None, None
+# "8C10G", "10C/10G" are CPU/GPU core counts. Left in place they read as
+# 10 GB RAM and an 8 TB SSD — a real listing was stored that way, and the
+# bogus SSD then earned a VFM bonus.
+_CORE_COUNT_RE = re.compile(r'\d+\s*C\s*/?\s*\d+\s*G', re.I)
+
+# "16G/512G", "8G+512G", "36G/2TB", "16GB 256GB"
+_PAIR_RE = re.compile(
+    r'\b(\d{1,3})\s*(?:G|GB)?\s*[/+\s]\s*(\d{1,4})\s*(G|GB|T|TB)?\b', re.I)
+
+# G may be followed by Chinese ("16G記憶體"), so no trailing \b after the unit.
+_RAM_RE = re.compile(r'\b(\d{1,3})\s*(?:GB|G)\s*(?:RAM|記憶體|統一記憶體|記憶)?', re.I)
+_SSD_RE = re.compile(r'\b(\d{3,4})\s*(?:GB|G)\s*(?:SSD|硬碟|儲存)?', re.I)
+_SSD_TB_RE = re.compile(r'\b([1248])\s*TB?\b(?!\w)', re.I)
+
+
+def _as_ssd_gb(value: int, unit: str | None) -> int | None:
+    """Normalise an SSD figure to GB. A bare 1/2/4/8 means terabytes."""
+    if unit and unit.upper().startswith("T"):
+        value *= 1024
+    elif value <= 8:
+        value *= 1024
+    return value if value in _VALID_SSD else None
+
+
+def extract_specs_from_text(text: str) -> tuple:
+    """Pull (ram_gb, ssd_gb) out of a title or spec line, or (None, None).
+
+    Returning nothing is fine — the LLM fills the gap, and a wrong number is
+    far worse than a missing one because it feeds the VFM formula directly.
+    """
+    text = _CORE_COUNT_RE.sub(" ", preprocess_text(text))
+
+    # A paired "RAM/SSD" reading is the most reliable, so try every pair in the
+    # string and take the first that is a configuration Apple sells. The old
+    # version stopped at the first regex hit, so "8C7G/8G/256G" gave up on the
+    # core-count fragment and never reached the real 8G/256G behind it.
+    for r_str, s_str, unit in _PAIR_RE.findall(text):
+        ram = int(r_str)
+        if ram not in _VALID_RAM:
+            continue
+        ssd = _as_ssd_gb(int(s_str), unit)
+        if ssd is not None:
+            return ram, ssd
+
+    ram = ssd = None
+    for m in _RAM_RE.finditer(text):
+        if (v := int(m.group(1))) in _VALID_RAM:
+            ram = v
+            break
+    for m in _SSD_RE.finditer(text):
+        if (v := _as_ssd_gb(int(m.group(1)), None)) is not None:
+            ssd = v
+            break
+    if ssd is None and (m := _SSD_TB_RE.search(text)):
+        ssd = _as_ssd_gb(int(m.group(1)), "T")
+
+    # 8 is a valid RAM size and a valid TB count; if the only number found is
+    # the same one for both, we cannot tell which it was.
+    if ram is not None and ssd == ram * 1024 and ram == 8:
+        ssd = None
+    return ram, ssd
 
 def infer_correct_year(item: dict, title: str) -> tuple:
     original_year = item.get("release_year")
