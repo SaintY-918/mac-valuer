@@ -8,6 +8,12 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+# One list, used by the sidebar options, the defaults and the reset button.
+# Adding a scraper means adding it here and nowhere else in this file.
+SOURCES = ["ptt", "shopee", "carousell"]
+SOURCE_LABELS = {"ptt": "PTT MacShop", "shopee": "蝦皮", "carousell": "旋轉拍賣"}
+
+
 def _read_secret(name: str) -> str | None:
     """Streamlit Community Cloud serves config via st.secrets; local runs use env.
 
@@ -389,7 +395,7 @@ with st.sidebar:
             "model_type": None, "chip_input": "", "ram_gb": None,
             "ssd_gb_filter": None, "screen_size": None,
             "min_price": 0, "max_price": 0, "show_sold": False,
-            "source_filter": ["ptt", "shopee"],
+            "source_filter": list(SOURCES),
             "ram_mult": 1.25, "ssd_mult": 1.1,
             "w_air13": 1.00, "w_air15": 1.08,
             "w_pro13": 1.00, "w_pro14": 1.18, "w_pro16": 1.22,
@@ -425,8 +431,8 @@ with st.sidebar:
     max_price = st.number_input("最高價格 (TWD)", min_value=0, step=1000, key="max_price")
     source_filter = st.multiselect(
         "賣場來源",
-        options=["ptt", "shopee"],
-        format_func=lambda x: "PTT MacShop" if x == "ptt" else "蝦皮",
+        options=SOURCES,
+        format_func=lambda x: SOURCE_LABELS.get(x, x),
         key="source_filter",
     )
     show_sold = st.checkbox("顯示已售出物件", key="show_sold")
@@ -459,7 +465,7 @@ with st.sidebar:
             "model_type": None, "chip_input": "", "ram_gb": None,
             "ssd_gb_filter": None, "screen_size": None,
             "min_price": 0, "max_price": 0, "show_sold": False,
-            "source_filter": ["ptt", "shopee"],
+            "source_filter": list(SOURCES),
             "ram_mult": 1.25, "ssd_mult": 1.1,
             "w_air13": 1.00, "w_air15": 1.08,
             "w_pro13": 1.00, "w_pro14": 1.18, "w_pro16": 1.22,
@@ -489,6 +495,9 @@ weights = {
 }
 
 _selected_sources: list = source_filter or []
+# get_filtered_deals takes a single source, so only that case goes to SQL.
+# Any other subset is narrowed in Python below — previously a two-of-three
+# selection applied no filter at all and leaked the unselected source.
 _source_param = _selected_sources[0] if len(_selected_sources) == 1 else None
 _status_param = "sold" if show_sold else "available"
 
@@ -504,6 +513,10 @@ try:
         model_type=model_type,
         source=_source_param,
     )
+    # Subset of sources that SQL could not express
+    if 1 < len(_selected_sources) < len(SOURCES):
+        deals = [d for d in deals if d.get("source") in _selected_sources]
+
     # ssd_gb filter: not in SQL, apply in Python
     if ssd_gb_filter:
         deals = [d for d in deals if int(_nan_safe(d.get("ssd_gb"), 0)) == ssd_gb_filter]
@@ -658,7 +671,9 @@ current_page = max(1, min(current_page, max_pages))
 # ── Deal cards ─────────────────────────────────────────────────────────────────
 # Rendered as one HTML block rather than st.dataframe: a 13-column table is
 # unreadable below ~700px and st.dataframe exposes almost no styling control.
-_SOURCE_LABELS = {"ptt": "PTT", "shopee": "蝦皮", "carousell": "旋轉"}
+# Short forms for the card's "前往X" button; SOURCE_LABELS at the top holds the
+# longer names the sidebar filter shows.
+_CTA_LABELS = {"ptt": "PTT", "shopee": "蝦皮", "carousell": "旋轉拍賣"}
 
 
 def _tier(score: float) -> tuple[str, str]:
@@ -718,7 +733,7 @@ def _render_deal(row: dict, is_top: bool) -> str:
     price_html = (
         f"<s>NT$</s><b>{int(float(price)):,}</b>" if price else "<b>—</b>"
     )
-    cta = f"前往{_SOURCE_LABELS.get(source, source or '賣場')}"
+    cta = f"前往{_CTA_LABELS.get(source, source or '賣場')}"
     badge = '<span class="badge">最划算</span>' if is_top else ""
 
     return (
