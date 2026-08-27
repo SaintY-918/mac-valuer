@@ -1,0 +1,70 @@
+name: Shopee CI feasibility test
+
+# Manual only. Answers one question: can the browser-based Shopee scraper work
+# from a GitHub runner? The daily runs returned zero for three reasons that are
+# fixable here (no session on the runner, headless hitting the login wall,
+# camoufox's browser never fetched), so the assumption that Shopee blocks
+# datacenter IPs was never actually tested.
+#
+# Touches no database and calls no LLM — it only reports what the scraper saw.
+#
+# Requires the SHOPEE_STATE_B64 secret: run
+#   python -m src.scripts.export_shopee_session
+# locally and paste the output in. That value is a live login credential.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # The daily workflow only ran `playwright install chromium`; camoufox
+      # ships its own patched Firefox and has to be fetched separately, so the
+      # browser path could never have launched in CI.
+      - name: Fetch camoufox browser
+        run: python -m camoufox fetch
+
+      - name: Restore Shopee session
+        env:
+          SHOPEE_STATE_B64: ${{ secrets.SHOPEE_STATE_B64 }}
+        run: |
+          if [ -z "$SHOPEE_STATE_B64" ]; then
+            echo "::error::SHOPEE_STATE_B64 is not set — see export_shopee_session.py"
+            exit 1
+          fi
+          printf '%s' "$SHOPEE_STATE_B64" | base64 -d | gunzip > shopee_state.json
+          python -c "import json;d=json.load(open('shopee_state.json'));print(f'restored {len(d[\"cookies\"])} cookies')"
+
+      - name: Report runner location
+        run: |
+          echo "Runner egress IP and geo (Shopee sees this):"
+          curl -s https://ipinfo.io | head -20 || true
+
+      - name: Probe Shopee
+        env:
+          SHOPEE_HEADLESS: "true"
+          SHOPEE_MIN_DELAY: "3"
+          SHOPEE_MAX_DELAY: "8"
+        run: python -m src.scripts.probe_shopee_browser
+
+      # The scraper writes the session back after a successful run; capturing it
+      # shows whether Shopee rotated or invalidated the cookies.
+      - name: Upload resulting session for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopee-state-after-run
+          path: shopee_state.json
+          retention-days: 1
