@@ -101,11 +101,11 @@ GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
 | 對象 | 商城賣家、ERP 系統供應商 | 分潤計畫推廣夥伴 |
 | 本專案要的 | ❌ 不符資格，申請不會過 | ✅ 這個 |
 
-> ⚠️ **未經驗證：台灣是否開放自助申請 Open API 尚未確認。**
-> 巴西、越南的分潤後台有 Open API 區塊可自行建立金鑰，但**台灣後台實測找不到**，
-> 其他使用者也回報過同樣狀況。`https://affiliate.shopee.tw/open_api` 回 HTTP 200，
-> 但該站對任意路徑都回相同的 SPA 外殼（內容 md5 一致），無法據此判斷頁面存在。
-> 在拿到金鑰之前，**本機排程（`scripts/run_local_shopee.ps1`）是實際運作中的資料來源，
+> ⚠️ **Open API 金鑰不能自助申請，須另外聯繫蝦皮開通。**
+> 分潤計畫審核通過**不等於**有 API 權限。通過後 `https://affiliate.shopee.tw/open_api`
+> 會顯示「您目前無權限申請蝦皮分潤計畫之Open API金鑰。請聯繫我們以開通權限」，
+> 且「申請API金鑰」按鈕是停用狀態——必須透過該頁的「聯繫我們」提出申請。
+> 在金鑰到手之前，**本機排程（`scripts/run_local_shopee.ps1`）是實際運作中的資料來源，
 > 不是過渡方案**。
 
 **申請流程**
@@ -114,10 +114,14 @@ GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
 2. 填個人資料（個人／企業、姓名、聯絡方式）
 3. 填**媒體資料**——需提供社群帳號或網站
 4. 送出後人工審核，約 **2~5 個工作天**
-5. 通過後找 Open API 區塊。選單裡沒有的話直接打 `https://affiliate.shopee.tw/open_api`；
-   仍然沒有就洽蝦皮客服確認台灣是否提供此功能
+5. 通過後前往 `https://affiliate.shopee.tw/open_api`（**選單裡沒有這一項，要直接打網址**）
+6. 該頁的「聯繫我們」提出開通 Open API 權限的申請，說明用途；開通後才能按「申請API金鑰」
+   取得 App ID 與 API 金鑰
 
 **門檻**：任一社群平台至少 300 位好友／追蹤者，或網站具一定流量。被拒可補件重送。
+
+**另一條可能不需要 API 權限的路**：後台側邊欄「特殊操作 → Product Feed」。商品資料饋送
+通常是可下載或固定網址的商品目錄，若涵蓋二手商品即可直接取用，同樣是官方管道。尚未查證。
 
 **API 端點**：`https://open-api.affiliate.shopee.tw/graphql`（GraphQL，SHA256 簽章）
 **互動測試工具**：[Open API Explorer V2](https://open-api.affiliate.shopee.vn/explorer/v2)
