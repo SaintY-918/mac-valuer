@@ -47,6 +47,10 @@
 - **前後端晶片基準表補齊 M1 Ultra / M2 Ultra**，原本網頁上會掉到預設值，同機差 5 倍。
 - 移除殘留的 debug 程式碼（寫入不存在的 `scratch/` 目錄會直接中斷）。
 
+### 安全性
+- **提交身分改用 GitHub noreply 位址**，不再帶出真實 email（見 decisions #8）。
+- `CLAUDE.md` 新增公開專案的個資檢查與外部免費服務的維護風險條款。
+
 ### 文件
 - 記錄蝦皮聯盟行銷 Open API 的申請流程、門檻與**權限需另外開通**的實測結果。
 - 記錄**蝦皮封鎖 GitHub runner 為實測結論**，非推論（`scene=crawler_item`）。
