@@ -14,6 +14,7 @@ from src.database.db_manager import DBManager
 from src.models.mac_spec import MacBookSpec
 from src.notifier import send_alert, send_heartbeat
 from src.parser.llm_parser import extract_specs_from_text, parse_deal_llm
+from src.scrapers.carousell import CarousellScraper
 from src.scrapers.ptt import PTTScraper
 from src.scrapers.shopee import ShopeeScraper
 
@@ -73,10 +74,28 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
         print("=== Step 1: Skipped (--skip-scrape) — reusing existing DB data ===")
     else:
         print(f"=== Step 1: Fetching from scrapers (source={source}) ===")
-        all_scrapers = {"ptt": PTTScraper(), "shopee": ShopeeScraper()}
-        scrapers = [all_scrapers[source]] if source != "all" else list(all_scrapers.values())
-        for scraper in scrapers:
-            src_name = "shopee" if isinstance(scraper, ShopeeScraper) else "ptt"
+        all_scrapers = {
+            "ptt": PTTScraper(),
+            "shopee": ShopeeScraper(),
+            "carousell": CarousellScraper(),
+        }
+        # Name each source by its key. The previous isinstance check assumed
+        # exactly two scrapers and would have labelled any third one "ptt",
+        # mixing its listings into PTT's counts and sweep.
+        if source == "all":
+            selected = all_scrapers
+        else:
+            # Comma-separated so CI can ask for the sources a runner can serve
+            # ("ptt,carousell") without running the whole pipeline once per source.
+            wanted = [s.strip() for s in source.split(",") if s.strip()]
+            unknown = [s for s in wanted if s not in all_scrapers]
+            if unknown:
+                raise SystemExit(
+                    f"unknown source(s): {', '.join(unknown)}. "
+                    f"Choose from: {', '.join(all_scrapers)}, all"
+                )
+            selected = {s: all_scrapers[s] for s in wanted}
+        for src_name, scraper in selected.items():
             sources_attempted.add(src_name)
             try:
                 listings = asyncio.run(scraper.fetch_listings())
@@ -289,7 +308,9 @@ def _run_notifier(db: DBManager, final_results: list[dict]) -> int:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", choices=["ptt", "shopee", "all"], default="all")
+    parser.add_argument("--source", default="all",
+                        help="all, one source, or a comma-separated list "
+                             "(ptt, shopee, carousell). Example: --source ptt,carousell")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-scrape", action="store_true",
                          help="Skip Step 1 (scraping) and reuse existing DB data — for testing repair/scoring/notifier without hitting network scrapers or LLM quota on new listings.")

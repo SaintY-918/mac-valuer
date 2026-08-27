@@ -57,3 +57,42 @@
 - **防爆機制 (Safety)**：
   - 支援環境變數 `MAX_LLM_CALLS_PER_RUN` (Default: 30)。
   - 達上限時觸發 Graceful Shutdown。
+
+---
+
+### 3.Y Carousell Scraper (旋轉拍賣)
+**目標**：抓取旋轉拍賣上的二手 MacBook。
+
+- **實作與繼承**：`CarousellScraper` 繼承 `BaseScraper`，`source="carousell"`。
+- **傳輸方式**：**純 HTTP，不使用瀏覽器**。分類頁與商品頁皆為伺服器端渲染，
+  所需欄位全部位於 schema.org 的 `application/ld+json` 區塊。
+  因此**可在 GitHub Actions 上執行**，與 PTT 同級穩定，不依賴本機。
+
+- **robots.txt 遵循（2026-08-27 查核）**：
+
+  | 規則 | 本實作 |
+  |---|---|
+  | `Disallow: /search/` | 不使用 |
+  | `Disallow: /*?` | 不使用任何帶查詢字串的網址；因此**不能用 `?page=` 分頁** |
+  | `Allow: /api-service/*?` | 未使用（端點存在但回應格式未知） |
+  | `Sitemap:` | **主要入口** |
+
+  站方明文提供 sitemap 並禁止搜尋頁，實作必須照此區分。此為與蝦皮的根本差異：
+  蝦皮無此類規範且主動封鎖，旋轉拍賣則明示哪些可爬。
+
+- **取得流程**：
+  1. 讀取商品 sitemap（`CAROUSELL_SITEMAP`，預設 computers-tech，約 9,400 筆商品、2.5MB）
+  2. 以解碼後的網址 slug 比對機型與排除字詞，依 `<lastmod>` 排序取最新 `CAROUSELL_MAX_ITEMS` 筆
+  3. 逐一取商品頁，解析 JSON-LD `@type=Product`
+
+- **過濾機制**：
+  1. **L1**：`5000 <= price <= 150000`，且標題與 slug 均不含排除字詞。
+  2. **標題必須含機型名稱**——僅比對 slug 不足：實測有 Honor 筆電以
+     「鋁合金類macbook」進入，另有賣家標題為「888」搭配 99999 佔位價。
+  3. **L2**：`offers.availability` 非 `InStock` 即視為售出；另以 `_SOLD_KEYWORDS` 比對描述作為後備。
+  4. **L3**：`body_content` 上限 800 字元。
+
+- **失敗語意**：sitemap 取不到任何機型網址時**拋出例外**（sitemap 恆有內容，
+  空結果代表格式變更），個別商品頁失敗則記錄 warning 並跳過，不中斷整批。
+
+- **請求量**：1（sitemap）+ `CAROUSELL_MAX_ITEMS`（預設 30），並以 `CAROUSELL_DELAY` 間隔。

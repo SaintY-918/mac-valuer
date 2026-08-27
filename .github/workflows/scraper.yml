@@ -22,11 +22,10 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      # Only PTT runs here. The browser-based Shopee scraper cannot work on a
-      # GitHub runner: Shopee blocks datacenter IPs, the login session cannot be
-      # carried onto an ephemeral runner, and camoufox has no browser installed.
-      # Shopee is included only when affiliate API credentials are available,
-      # since that path is plain signed HTTP with no anti-bot wall.
+      # PTT and Carousell always run here: both are plain HTTP against
+      # server-rendered pages with no anti-bot wall. Shopee's browser path
+      # cannot work on a runner — measured, see README — so Shopee joins only
+      # when affiliate API credentials make it signed HTTP instead.
       - name: Decide which sources to scrape
         id: sources
         env:
@@ -34,10 +33,10 @@ jobs:
         run: |
           if [ -n "$SHOPEE_APP_ID" ]; then
             echo "value=all" >> "$GITHUB_OUTPUT"
-            echo "Shopee affiliate credentials found -> scraping ptt + shopee"
+            echo "Shopee affiliate credentials found -> ptt + shopee + carousell"
           else
-            echo "value=ptt" >> "$GITHUB_OUTPUT"
-            echo "No Shopee affiliate credentials -> scraping ptt only"
+            echo "value=ptt,carousell" >> "$GITHUB_OUTPUT"
+            echo "No Shopee affiliate credentials -> ptt + carousell"
           fi
 
       - name: Run scraper pipeline
