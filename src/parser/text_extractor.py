@@ -21,7 +21,7 @@ def extract_price(body: str) -> Optional[float]:
     content = _section(body, sell_tag)
     if not content:
         return None
-    m = re.search(r"([0-9][0-9,]*)([kK])", content)
+    m = re.search(r"([0-9][0-9,.]*)\s*([kK])\b", content)
     k_match = bool(m)
     if not m:
         m = re.search(r"([0-9][0-9,]*)", content)

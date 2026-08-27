@@ -4,7 +4,7 @@ import os
 from typing import Optional
 
 import feedparser
-from playwright.async_api import async_playwright, Browser
+from playwright.async_api import Browser, async_playwright
 
 from src.scrapers.base import BaseScraper, RawListing
 

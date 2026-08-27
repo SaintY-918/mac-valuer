@@ -2,10 +2,10 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, text
+from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()

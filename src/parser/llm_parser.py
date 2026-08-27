@@ -1,16 +1,21 @@
+import json
 import logging
 import os
-import json
 import re
 import threading
 import time
 from typing import Optional
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
 from src.models.mac_spec import MacBookSpec, ModelSeries
 from src.parser.text_extractor import (
-    extract_price, extract_location, extract_warranty, extract_spec_line,
+    extract_location,
+    extract_price,
+    extract_spec_line,
+    extract_warranty,
 )
 
 logger = logging.getLogger(__name__)
@@ -288,12 +293,12 @@ BODY:
                     base_delay *= 2
                 else:
                     raise e
-                    
+
         json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
         if not json_match: return None
         item = json.loads(json_match.group(0))
         if item.get("ignore"): return None
-        
+
         # --- DATA CLEANUP ---
         # 1. Price: structured [售價] > LLM (normalise string fallback)
         if struct_price:
@@ -318,16 +323,16 @@ BODY:
         # 5. Screen size: LLM > regex (title > spec section > body)
         if not item.get("screen_size"):
             item["screen_size"] = regex_screen
-        
+
         is_spec_inferred = (not item.get("ram_gb") or not item.get("ssd_gb"))
         correct_year, was_inferred = infer_correct_year(item, clean_title)
         item["release_year"] = correct_year
         item["is_year_inferred"] = was_inferred
         item["is_spec_inferred"] = is_spec_inferred
-        
+
         if item.get("series") not in [s.value for s in ModelSeries]:
             item["series"] = "Air" if "air" in clean_title.lower() else "Pro 13"
-            
+
         return MacBookSpec(**item)
     except Exception as e:
         logger.warning("LLM parser error: %s", e)

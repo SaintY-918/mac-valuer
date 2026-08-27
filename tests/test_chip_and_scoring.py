@@ -8,13 +8,16 @@ machine differently on the page and in the alert.
 import pytest
 
 from src.calculator.score_engine import (
-    ScoringWeights, adjusted_score, depreciation, form_factor_key,
-    get_vfm_score, vfm_from_mapping,
+    ScoringWeights,
+    adjusted_score,
+    depreciation,
+    form_factor_key,
+    get_vfm_score,
+    vfm_from_mapping,
 )
 from src.main import force_extract_chip
 from src.models.mac_spec import MacBookSpec
 from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark
-
 
 # ── Chip extraction ───────────────────────────────────────────────────────────
 

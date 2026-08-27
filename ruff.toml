@@ -1,0 +1,50 @@
+# Rule selection is deliberate. Enabling everything produces enough noise that
+# real findings get scrolled past, which is worse than not running a linter.
+#
+# What justified adding it: a raw 0x08 byte sitting inside a regex where \b was
+# meant, invisible on screen, which silently broke price extraction for every
+# PTT listing written as "25k".
+
+line-length = 110
+target-version = "py311"
+
+exclude = ["venv", "design", ".spec"]
+
+[lint]
+select = [
+    "F",      # pyflakes — unused imports, undefined names
+    "E", "W", # pycodestyle errors
+    "I",      # import sorting, so diffs stay small
+    "B",      # bugbear — mutable defaults, shared state, real footguns
+    "PLE",    # pylint errors — the control-character check that started this
+    "S102",   # exec
+    "S307",   # eval
+    "DTZ",    # naive datetimes
+    "RUF",    # ruff's own checks
+]
+
+ignore = [
+    # `Optional[X]` vs `X | None` and `Dict` vs `dict`: cosmetic, and the
+    # codebase is consistent as it stands.
+    "UP006", "UP035", "UP045",
+    # Blind `except Exception` is the house style in the scrapers on purpose:
+    # one malformed listing must not abort a run.
+    "BLE001",
+    # Long lines in Chinese comments count characters, not display width.
+    "E501",
+    # Ambiguous full-width punctuation in Chinese strings.
+    "RUF001", "RUF002", "RUF003",
+    # `if cond: value` one-liners. infer_correct_year is a lookup table written
+    # as a chain; spreading it over three times the lines adds no clarity.
+    "E701",
+]
+
+[lint.per-file-ignores]
+# The dashboard has to inject DATABASE_URL into the environment before
+# db_manager is imported, so those imports cannot sit at the top.
+"src/dashboard.py" = ["E402"]
+"src/scripts/*.py" = ["E402"]
+"tests/*.py" = [
+    "S101",    # asserts are the point
+    "RUF059",  # unused unpacked values document what the call returns
+]

@@ -1,6 +1,6 @@
 import asyncio
-import logging
 import json
+import logging
 import os
 import re
 from collections import defaultdict
@@ -14,7 +14,9 @@ from src.models.mac_spec import MacBookSpec
 from src.notifier import send_alert, send_heartbeat
 from src.parser.condition_flags import find_defects
 from src.parser.llm_parser import (
-    extract_specs_from_text, infer_correct_year, parse_deal_llm,
+    extract_specs_from_text,
+    infer_correct_year,
+    parse_deal_llm,
 )
 from src.scrapers.carousell import CarousellScraper
 from src.scrapers.ptt import PTTScraper
@@ -59,12 +61,6 @@ def force_extract_chip(title: str) -> str | None:
 
 
 _INVALID_CHIPS = {"unknown", "none", "null", "n/a", ""}
-_INTEL_KEYWORDS = ("intel", "i5", "i7", "i9")
-
-
-def _is_invalid_chip(chip_val) -> bool:
-    v = str(chip_val or "").lower().strip()
-    return not v or v in _INVALID_CHIPS or any(k in v for k in _INTEL_KEYWORDS)
 
 
 def _read_alert_threshold() -> float:

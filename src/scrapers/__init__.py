@@ -4,6 +4,9 @@ from .ptt import PTTScraper
 from .shopee import ShopeeScraper
 
 __all__ = [
-    "BaseScraper", "RawListing",
-    "CarousellScraper", "PTTScraper", "ShopeeScraper",
+    "BaseScraper",
+    "CarousellScraper",
+    "PTTScraper",
+    "RawListing",
+    "ShopeeScraper",
 ]

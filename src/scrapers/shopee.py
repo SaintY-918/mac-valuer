@@ -424,16 +424,16 @@ class ShopeeScraper(BaseScraper):
                         stock = item_data.get("stock")
                         if stock is None or stock == 0:
                             stock = item_data.get("normal_stock")
-                            
+
                     if stock is None:
                         stock = 0
-                        
+
                     if stock > 0:
                         price = item_data.get("price_info", {}).get("current_price")
                         if price is None or price == 0:
                             price = item_data.get("price", 0)
                         price = price / 100000
-                            
+
                         listings.append(RawListing(
                             url=url, title=base_name,
                             body_content=f"【系統自動標註：此商品售價為 {int(price)} 元】\n" + desc, source="shopee", status="available",

@@ -20,8 +20,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.scrapers.shopee import ShopeeScraper, ShopeeSessionExpired  # noqa: E402
-from src.scrapers.shopee_api import credentials_configured  # noqa: E402
+from src.scrapers.shopee import ShopeeScraper, ShopeeSessionExpired
+from src.scrapers.shopee_api import credentials_configured
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 

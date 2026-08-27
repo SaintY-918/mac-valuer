@@ -19,9 +19,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.database.db_manager import DBManager, Deal  # noqa: E402
-from src.parser.llm_parser import (  # noqa: E402
-    _VALID_RAM, _VALID_SSD, extract_specs_from_text,
+from src.database.db_manager import DBManager, Deal
+from src.parser.llm_parser import (
+    _VALID_RAM,
+    _VALID_SSD,
+    extract_specs_from_text,
 )
 
 

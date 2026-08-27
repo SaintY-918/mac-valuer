@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.scrapers.shopee_api import (  # noqa: E402
+from src.scrapers.shopee_api import (
     ShopeeAffiliateScraper,
     ShopeeAuthError,
     credentials_configured,

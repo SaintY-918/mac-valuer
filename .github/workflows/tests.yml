@@ -27,7 +27,12 @@ jobs:
       # tested modules import.
       - name: Install test dependencies
         run: |
-          pip install pytest pandas numpy pydantic sqlalchemy python-dotenv requests
+          pip install pytest ruff pandas numpy pydantic sqlalchemy python-dotenv requests
+
+      # Runs before the tests: a lint failure is usually faster to read than a
+      # test failure caused by the same mistake.
+      - name: Lint
+        run: python -m ruff check .
 
       # No secrets are provided on purpose. The suite has to pass without a
       # Gemini key or a database — that constraint is what keeps pure logic

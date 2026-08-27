@@ -15,6 +15,7 @@ where values arrive from a DataFrame and may be NaN) use `vfm_from_mapping`.
 import datetime
 import math
 from typing import Any, Mapping
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
@@ -22,6 +23,16 @@ from src.models.mac_spec import MacBookSpec
 from src.utils.benchmark_db import get_benchmark
 
 DEPRECIATION_RATE = 0.10
+
+# Ages are counted in the market's calendar, not the server's. Streamlit Cloud
+# and GitHub Actions both run in UTC while the listings are Taiwanese, so around
+# New Year a naive now() would put the two eight hours and one whole year of
+# depreciation apart.
+MARKET_TZ = ZoneInfo("Asia/Taipei")
+
+
+def current_year() -> int:
+    return datetime.datetime.now(MARKET_TZ).year
 
 RAM_BONUS_THRESHOLD_GB = 16
 SSD_BONUS_THRESHOLD_GB = 1024
@@ -46,6 +57,13 @@ class ScoringWeights(BaseModel):
 
     def form_weight(self, key: str) -> float:
         return float(getattr(self, f"form_{key}", 1.0))
+
+
+# One shared instance rather than a call in each signature. A default argument
+# is evaluated once at definition time, so `weights=ScoringWeights()` hands every
+# caller the same mutable object — naming it makes that explicit instead of
+# accidental.
+DEFAULT_WEIGHTS = ScoringWeights()
 
 
 def form_factor_key(series: Any, screen_size: Any) -> str:
@@ -78,7 +96,7 @@ def depreciation(release_year: Any) -> float:
         year = int(release_year)
     except (TypeError, ValueError):
         return 1.0
-    age = max(0, datetime.datetime.now().year - year)
+    age = max(0, current_year() - year)
     return (1 - DEPRECIATION_RATE) ** age
 
 
@@ -119,7 +137,7 @@ def calculate_adjusted_score(spec: MacBookSpec, weights: ScoringWeights) -> floa
 
 def get_vfm_score(
     spec: MacBookSpec,
-    weights: ScoringWeights = ScoringWeights(),
+    weights: ScoringWeights = DEFAULT_WEIGHTS,
 ) -> float:
     """Benchmark points per NT$1,000."""
     if not spec.price or spec.price <= 0:
@@ -129,7 +147,7 @@ def get_vfm_score(
 
 def vfm_from_mapping(
     row: Mapping[str, Any],
-    weights: ScoringWeights = ScoringWeights(),
+    weights: ScoringWeights = DEFAULT_WEIGHTS,
 ) -> float:
     """Same score, for callers holding a plain row rather than a MacBookSpec.
 

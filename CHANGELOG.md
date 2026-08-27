@@ -10,7 +10,8 @@
 ### 新增
 - **測試套件（pytest）**，89 項，涵蓋規格抽取、晶片辨識、VFM 評分、瑕疵偵測、
   下架判定與各爬蟲的過濾規則。全部為純邏輯，**無金鑰、無資料庫亦可執行**。
-- **CI 品質關卡**：每次 push 與 PR 自動執行測試。
+- **CI 品質關卡**：每次 push 與 PR 自動執行 lint 與測試。
+- **ruff linter**（`ruff.toml`），規則經篩選，只保留能抓出 bug 的項目。
 - **旋轉拍賣（Carousell）成為第三個資料來源**。純 HTTP、無反爬牆、資料位於
   schema.org JSON-LD，因此可在 GitHub Actions 上執行，不依賴本機。
   僅使用對方 `robots.txt` 允許的入口（sitemap 與 `/p/` 商品頁）。
@@ -26,6 +27,8 @@
 - 規格文件：`scraper`、`api`、`llm-parser`、`score-engine`。
 
 ### 變更
+- **移除死程式碼**：`src/processor/`（無人呼叫）、`src/parser/scraper.py`（已被取代的殘留）、
+  `main.py: _is_invalid_chip()`。
 - **Dashboard 改用 SainTech Design System**，並改為一列一筆的響應式卡片，
   取代原本 13 欄的 `st.dataframe`。手機上第一筆物件的位置由約 1150px 移至 297px。
 - **Streamlit 主題移至 `.streamlit/config.toml`**。原本以注入 CSS 塗黑背景，
@@ -38,6 +41,10 @@
 - **晶片基準分改用實測 Geekbench 6 多核並標註來源**；M5 系列先前為外推值。
 
 ### 修正
+- **PTT 以「25k」形式標示的售價全部抽不到**。regex 裡有一個**實體倒退字元**（0x08）
+  佔據了原本應為 `` 的位置，該樣式永遠不可能匹配。由 linter 掃出。
+- **年份改用台灣時區計算**。伺服器跑在 UTC，跨年時會與台灣差一年，
+  使全部物件的折舊年數偏移。
 - **前後端 VFM 公式收斂為單一實作**。原本 125 筆中有 59 筆分數不同（最大差 55 分），
   7 筆落在 Discord 警報門檻兩側。修正後差異為 0。
 - **晶片抽取不再寫死世代**。原本清單止於 M4，導致所有 M5 機種抽不到晶片而被丟棄，

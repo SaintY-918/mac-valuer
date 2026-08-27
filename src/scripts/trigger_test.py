@@ -28,7 +28,7 @@ def main():
         session.commit()
         print(f"Updated: {target.title}")
         print(f"  URL: {target.url}")
-        print(f"  last_alerted_price → 100")
+        print("  last_alerted_price → 100")
 
 
 if __name__ == "__main__":

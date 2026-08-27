@@ -1,4 +1,3 @@
-import datetime
 import os
 from datetime import timedelta
 from html import escape
@@ -33,13 +32,18 @@ _db_url = _read_secret("DATABASE_URL")
 if _db_url:
     os.environ["DATABASE_URL"] = _db_url
 
-from src.calculator.score_engine import (  # noqa: E402
-    RAM_BONUS_THRESHOLD_GB, SSD_BONUS_THRESHOLD_GB, ScoringWeights,
-    depreciation, form_factor_key, vfm_from_mapping,
+from src.calculator.score_engine import (
+    RAM_BONUS_THRESHOLD_GB,
+    SSD_BONUS_THRESHOLD_GB,
+    ScoringWeights,
+    current_year,
+    depreciation,
+    form_factor_key,
+    vfm_from_mapping,
 )
-from src.database.db_manager import DBManager  # noqa: E402 (after env injection)
-from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark  # noqa: E402
-from src.parser.condition_flags import find_defects  # noqa: E402
+from src.database.db_manager import DBManager
+from src.parser.condition_flags import find_defects
+from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark
 
 # Scoring lives in src/calculator/score_engine — see the note there. The
 # dashboard used to keep its own copy of the formula and benchmark table, and
@@ -597,8 +601,8 @@ with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
         top = df.iloc[0].to_dict()
         chip_t = str(top.get("chip") or "")
         base_t = get_benchmark(chip_t)
-        year_t = int(_nan_safe(top.get("release_year"), datetime.date.today().year))
-        age_t  = max(0, datetime.date.today().year - year_t)
+        year_t = int(_nan_safe(top.get("release_year"), current_year()))
+        age_t  = max(0, current_year() - year_t)
         depr_t = round(depreciation(year_t), 4)
         r_t    = ram_mult if _nan_safe(top.get("ram_gb"), 0) >= RAM_BONUS_THRESHOLD_GB else 1.0
         s_t    = ssd_mult if _nan_safe(top.get("ssd_gb"), 0) >= SSD_BONUS_THRESHOLD_GB else 1.0

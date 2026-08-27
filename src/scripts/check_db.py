@@ -16,7 +16,7 @@ from sqlalchemy import text
 
 load_dotenv()
 
-from src.database.db_manager import DBManager  # noqa: E402
+from src.database.db_manager import DBManager
 
 
 def mask(url: str) -> str:
