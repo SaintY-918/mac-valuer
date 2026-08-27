@@ -34,6 +34,7 @@ if _db_url:
     os.environ["DATABASE_URL"] = _db_url
 
 from src.database.db_manager import DBManager  # noqa: E402 (after env injection)
+from src.parser.condition_flags import find_defects  # noqa: E402
 
 _BENCH = {
     "M1": 8500, "M1 Pro": 12000, "M1 Max": 12500,
@@ -279,6 +280,10 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
     background: var(--blue-500); color: #FFFFFF;
 }
 
+/* Sits beside the "最划算" badge. Danger red, because the VFM formula rewards
+   a broken machine for being cheap and the score alone reads as a bargain. */
+.badge--warn { background: var(--danger); }
+
 .deal__chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .deal__chips i {
     font-style: normal;
@@ -397,6 +402,7 @@ with st.sidebar:
             "model_type": None, "chip_input": "", "ram_gb": None,
             "ssd_gb_filter": None, "screen_size": None,
             "min_price": 0, "max_price": 0, "show_sold": False,
+            "hide_defects": False,
             "source_filter": list(SOURCES),
             "ram_mult": 1.25, "ssd_mult": 1.1,
             "w_air13": 1.00, "w_air15": 1.08,
@@ -438,6 +444,8 @@ with st.sidebar:
         key="source_filter",
     )
     show_sold = st.checkbox("顯示已售出物件", key="show_sold")
+    hide_defects = st.checkbox("隱藏瑕疵品", key="hide_defects",
+                               help="標題或成色提到功能性瑕疵者（瑕疵機、螢幕破裂、C 級等）")
 
     st.divider()
 
@@ -467,6 +475,7 @@ with st.sidebar:
             "model_type": None, "chip_input": "", "ram_gb": None,
             "ssd_gb_filter": None, "screen_size": None,
             "min_price": 0, "max_price": 0, "show_sold": False,
+            "hide_defects": False,
             "source_filter": list(SOURCES),
             "ram_mult": 1.25, "ssd_mult": 1.1,
             "w_air13": 1.00, "w_air15": 1.08,
@@ -518,6 +527,11 @@ try:
     # Subset of sources that SQL could not express
     if 1 < len(_selected_sources) < len(SOURCES):
         deals = [d for d in deals if d.get("source") in _selected_sources]
+
+    if hide_defects:
+        deals = [d for d in deals
+                 if not find_defects(d.get("original_title"), d.get("condition"),
+                                     d.get("body_content"))]
 
     # ssd_gb filter: not in SQL, apply in Python
     if ssd_gb_filter:
@@ -737,6 +751,10 @@ def _render_deal(row: dict, is_top: bool) -> str:
     )
     cta = f"前往{_CTA_LABELS.get(source, source or '賣場')}"
     badge = '<span class="badge">最划算</span>' if is_top else ""
+    # A defect warning outranks "最划算": the top-scoring listing was a 瑕疵機.
+    if (defects := find_defects(title, row.get("condition"), row.get("body_content"))):
+        badge = (f'<span class="badge badge--warn" title="{escape(" / ".join(defects), quote=True)}">'
+                 f'瑕疵</span>') + badge
 
     return (
         f'<a class="deal{" deal--top" if is_top else ""}" href="{escape(url, quote=True)}"'

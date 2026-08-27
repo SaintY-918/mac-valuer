@@ -12,6 +12,7 @@ from src.calculator.score_engine import get_vfm_score
 from src.database.db_manager import DBManager
 from src.models.mac_spec import MacBookSpec
 from src.notifier import send_alert, send_heartbeat
+from src.parser.condition_flags import find_defects
 from src.parser.llm_parser import (
     extract_specs_from_text, infer_correct_year, parse_deal_llm,
 )
@@ -266,6 +267,9 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
                 "_raw_title": row["original_title"],
                 "_raw_price": int(price),
                 "_raw_score": float(score),
+                # The alert calls a listing a bargain; if it is cheap because it
+                # is broken, that has to travel with it.
+                "_defects": find_defects(row["original_title"], row.get("condition")),
             })
         except Exception as e:
             logger.warning("Scoring error for '%s': %s", row.get("original_title", "?")[:30], e)
@@ -327,6 +331,7 @@ def _run_notifier(db: DBManager, final_results: list[dict]) -> int:
         ok = send_alert({
             "source": row.get("_source"),
             "title": row.get("_raw_title"),
+            "defects": row.get("_defects"),
             "price": price,
             "vfm_score": score,
             "url": url,

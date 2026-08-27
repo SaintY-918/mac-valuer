@@ -21,8 +21,15 @@ def _format_message(deal: Dict) -> str:
     price_str = f"NT$ {int(price):,}" if price is not None else "NT$ ?"
     score_str = f"{float(score):.0f}" if score is not None else "?"
 
+    # The alert calls this a bargain, and the VFM score rewards a low price —
+    # so a machine that is cheap because it is broken scores highest of all.
+    # The warning goes above the price, where it cannot be skimmed past.
+    defects = deal.get("defects") or []
+    warning = f"⚠️ **疑似瑕疵品**：{' / '.join(defects)}\n" if defects else ""
+
     return (
         "🔥 **撿漏警報**\n"
+        f"{warning}"
         f"平台：`{source}`\n"
         f"商品：**{title}**\n"
         f"價格：**{price_str}**\n"
