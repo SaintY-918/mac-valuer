@@ -54,6 +54,12 @@ class ShopeeScraper(BaseScraper):
         self._sem = asyncio.Semaphore(self._concurrency)
         self._state_path = Path(os.getenv("SHOPEE_STATE_PATH", "shopee_state.json"))
         self._headless = os.getenv("SHOPEE_HEADLESS", "false").lower() == "true"
+        # Visiting a detail page per candidate meant ~33 navigations per run in
+        # one session — the pattern that gets a client classified as a crawler.
+        # The search response already carries name and price (the L1 filter runs
+        # on them), so skipping details costs description and per-variant pricing
+        # but cuts the request count to the three search pages.
+        self._skip_details = os.getenv("SHOPEE_SKIP_DETAILS", "true").lower() == "true"
         self._current_calls = 0
 
     # ------------------------------------------------------------------
@@ -181,6 +187,10 @@ class ShopeeScraper(BaseScraper):
                 ]
                 logger.info("L1 filter: %d / %d items passed", len(candidates), len(unique_items))
 
+                if self._skip_details:
+                    logger.info("SHOPEE_SKIP_DETAILS=true — building listings from search "
+                                "results only (no per-item page visits)")
+
                 shop_listing_count: dict[int, int] = {}
                 for item in candidates:
                     if self._current_calls >= self._max_calls:
@@ -190,7 +200,11 @@ class ShopeeScraper(BaseScraper):
                     if shop_id and shop_listing_count.get(shop_id, 0) >= 3:
                         logger.debug("Diversity Guard: shop %s capped, skipping item %s", shop_id, item.get("itemid"))
                         continue
-                    item_listings = await self._fetch_item_details(context, item)
+                    if self._skip_details:
+                        lst = self._listing_from_search_item(item)
+                        item_listings = [lst] if lst else []
+                    else:
+                        item_listings = await self._fetch_item_details(context, item)
                     for lst in item_listings:
                         results.append(lst)
                         self._current_calls += 1
@@ -293,6 +307,49 @@ class ShopeeScraper(BaseScraper):
 
         logger.info("DOM fallback yielded %d product stubs", len(items))
         return items
+
+    # ------------------------------------------------------------------
+    # Lite path: build a listing from the search result alone
+    # ------------------------------------------------------------------
+
+    def _listing_from_search_item(self, item: dict) -> RawListing | None:
+        """One listing per product, using only what the search response carried.
+
+        No page visit, so no description and no per-variant prices — Variant
+        Flattening does not apply here. Shopee titles carry most of the spec
+        ("Macbook Air 15 2025 M4 10C10G/16G/256G"), which is what the LLM
+        parses anyway.
+        """
+        shop_id, item_id = item.get("shopid"), item.get("itemid")
+        name = (item.get("name") or "").strip()
+        if not shop_id or not item_id or not name:
+            return None
+
+        # Search prices are in micro-units, as the L1 filter above assumes.
+        price = int(item.get("price", 0)) / 100000
+        if price <= 0:
+            return None
+
+        # L2: the search feed keeps sold-out items listed, so drop them when it
+        # tells us the stock. Absent field means unknown — keep it.
+        stock = item.get("stock")
+        if stock is not None and stock <= 0:
+            logger.debug("L2: item %s out of stock, skipping", item_id)
+            return None
+
+        body = f"【系統自動標註：此商品售價為 {int(price)} 元】\n{name}"
+        # shop_location is the seller's city — better than making the LLM guess
+        # a location out of a title that never mentions one.
+        if (loc := (item.get("shop_location") or "").strip()):
+            body += f"\n賣家所在地：{loc}"
+
+        return RawListing(
+            url=f"https://shopee.tw/product/{shop_id}/{item_id}",
+            title=name,
+            body_content=body[:800],  # L3
+            source="shopee",
+            status="available",
+        )
 
     # ------------------------------------------------------------------
     # Detail page: multi-variant flattening (L2 + L3 gatekeeper entry)

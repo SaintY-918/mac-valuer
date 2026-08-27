@@ -37,7 +37,16 @@
   - 因此**不得**以「本次執行沒看到」作為下架依據。實測結果：蝦皮兩次執行的商品集合可能完全不相交（35 個舊商品 vs 30 個新商品，重疊 0），舊集合並非售出，只是被擠出最新清單。
   - 正確作法為 `DBManager.sweep_stale(source, max_age_days)`：僅當 `last_seen` 超過 `STALE_DAYS`（預設 14 天）未更新才標記 `unavailable`。
   - 真正的售出／下架偵測仍由爬蟲自身負責——PTT 靠 `_SOLD_KEYWORDS` 比對內文，蝦皮靠 L2 的 `has_stock` / `is_grayout` / `stock_info_v2` 檢查商品本身。
-- **規格處理 (Variant Flattening)**：
+- **請求量與精簡模式（`SHOPEE_SKIP_DETAILS`，預設 `true`）**：
+  - 逐一開啟商品詳情頁的作法，每次執行約產生 **33 次頁面載入**（3 搜尋頁 + 約 30 詳情頁），
+    集中在同一 session 的數分鐘內。這是被反爬系統判定為爬蟲的主要特徵。
+  - 精簡模式**只讀搜尋頁**，由 `_listing_from_search_item()` 直接組出 `RawListing`：
+    搜尋回應本身已含 `name` 與 `price`（L1 過濾器即依賴此二欄位），請求數降為 **3**。
+  - 精簡模式下**不適用 Variant Flattening**（無 model 層級資料），一個商品產生一筆；
+    亦無商品描述，`body_content` 由標題、價格標註與 `shop_location` 組成。
+  - L2 在此模式改以搜尋回應的 `stock` 欄位判定；該欄位缺失時視為未知，予以保留。
+  - 設為 `false` 可還原詳情頁模式（資料較完整，但觸發驗證碼的機率顯著較高）。
+- **規格處理 (Variant Flattening)**：僅適用於詳情頁模式。
   - 必須將包含多個 Models 的單一 Item 打平。
   - 每個 Model 需轉換為獨立的 `RawListing`。
   - **唯一識別 (URL)**：使用 Synthetic URL 格式 `[原始商品URL]?m=[modelid]`。
