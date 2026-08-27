@@ -28,8 +28,13 @@ class ShopeeSessionExpired(RuntimeError):
     """
 
 
-_EXCLUDE_TITLES =["殼", "膜", "零件機", "報廢", "充電線", "保護貼", "貼膜", "支架", "轉接"]
+_EXCLUDE_TITLES = ["殼", "膜", "零件機", "報廢", "充電線", "保護貼", "貼膜", "支架", "轉接"]
 _ITEM_URL_RE = re.compile(r"/product/(\d+)/(\d+)")
+
+# L1 gatekeeper bounds, named once so the candidate filter and the per-item
+# builder cannot drift to different numbers.
+L1_MIN_PRICE = 5000
+L1_MAX_PRICE = 150000
 
 
 def _extract_model_price(model: dict) -> int:
@@ -182,7 +187,7 @@ class ShopeeScraper(BaseScraper):
                 # L1 Gatekeeper: price range + title exclusion
                 candidates = [
                     item for item in unique_items
-                    if 5000 <= item.get("price", 0) / 100000 <= 150000
+                    if L1_MIN_PRICE <= item.get("price", 0) / 100000 <= L1_MAX_PRICE
                     and not any(w in item.get("name", "") for w in _EXCLUDE_TITLES)
                 ]
                 logger.info("L1 filter: %d / %d items passed", len(candidates), len(unique_items))
@@ -327,7 +332,10 @@ class ShopeeScraper(BaseScraper):
 
         # Search prices are in micro-units, as the L1 filter above assumes.
         price = int(item.get("price", 0)) / 100000
-        if price <= 0:
+        # L1: the caller already applies this range, but enforcing it here too
+        # means the method cannot emit an out-of-range listing if it is ever
+        # called from somewhere else — which is how the Carousell builder works.
+        if not (L1_MIN_PRICE <= price <= L1_MAX_PRICE):
             return None
 
         # L2: the search feed keeps sold-out items listed, so drop them when it

@@ -1,0 +1,36 @@
+name: Tests
+
+# Runs on every push and pull request. The scraper workflow only exercises the
+# happy path against live sites once a day; this is the gate that actually
+# catches a regression before it ships.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # requirements.txt pulls in playwright and camoufox, which fetch browser
+      # binaries and are irrelevant to the test suite. Install only what the
+      # tested modules import.
+      - name: Install test dependencies
+        run: |
+          pip install pytest pandas numpy pydantic sqlalchemy python-dotenv requests
+
+      # No secrets are provided on purpose. The suite has to pass without a
+      # Gemini key or a database — that constraint is what keeps pure logic
+      # separable from I/O.
+      - name: Run tests
+        run: python -m pytest tests/ -q

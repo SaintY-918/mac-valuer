@@ -18,7 +18,23 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 _model_id = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# Built on first use, not at import. Constructing it eagerly meant the module
+# could not be imported without a key — so even extract_specs_from_text, which
+# is pure regex and never calls the API, was untestable and CI could not load it.
+_client = None
+
+
+def _get_client() -> genai.Client:
+    global _client
+    if _client is None:
+        key = os.getenv("GEMINI_API_KEY")
+        if not key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is not set — required for LLM parsing, "
+                "but not for the regex extractors in this module."
+            )
+        _client = genai.Client(api_key=key)
+    return _client
 
 # The free tier caps requests per minute, and the pipeline used to pace itself
 # with a flat 1 s sleep in main.py — up to 60 calls a minute against a limit of
@@ -253,7 +269,7 @@ BODY:
         for attempt in range(max_retries):
             try:
                 _throttle()
-                response = _client.models.generate_content(
+                response = _get_client().models.generate_content(
                     model=_model_id,
                     contents=prompt,
                     config=types.GenerateContentConfig(response_mime_type="application/json"),
