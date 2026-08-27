@@ -12,7 +12,9 @@ from src.calculator.score_engine import get_vfm_score
 from src.database.db_manager import DBManager
 from src.models.mac_spec import MacBookSpec
 from src.notifier import send_alert, send_heartbeat
-from src.parser.llm_parser import extract_specs_from_text, parse_deal_llm
+from src.parser.llm_parser import (
+    extract_specs_from_text, infer_correct_year, parse_deal_llm,
+)
 from src.scrapers.carousell import CarousellScraper
 from src.scrapers.ptt import PTTScraper
 from src.scrapers.shopee import ShopeeScraper
@@ -160,6 +162,9 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
             or not p_json.get("ram_gb")
             or not p_json.get("ssd_gb")
             or not p_json.get("screen_size")
+            # A missing year is not cosmetic: the scorer falls back to 2020,
+            # which dates a current machine six years old and halves its VFM.
+            or not p_json.get("release_year")
         )
 
         if not needs_fix:
@@ -173,6 +178,17 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
 
         if not res_dict.get("chip") or res_dict.get("chip") == "None":
             res_dict["chip"] = force_extract_chip(title)  # may still be None — that is correct
+
+        # infer_correct_year() runs inside parse_deal_llm and keys off the chip,
+        # so a listing whose chip the LLM missed comes back with no year — and
+        # force_extract_chip fills the chip only afterwards. Re-derive the year
+        # now that it is known. Without this the scorer fell back to 2020, which
+        # dated a brand-new M5 six years old and halved its VFM: two identical
+        # listings scored 432 and 204 purely on whether the year survived.
+        if not res_dict.get("release_year") and res_dict.get("chip"):
+            inferred, _ = infer_correct_year(res_dict, title)
+            if inferred:
+                res_dict["release_year"] = inferred
 
         ram, ssd = extract_specs_from_text(title)
         if ram and not res_dict.get("ram_gb"):
