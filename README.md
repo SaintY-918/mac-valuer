@@ -89,6 +89,56 @@ GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
 
 `src/main.py` 不含任何平台判斷，切換完全封裝在 scraper 內（Strategy Pattern，見 `.spec/specs/scraper/spec.md`）。
 
+### 申請蝦皮聯盟行銷 Open API
+
+免費。分潤計畫不收申請費也不收月費——方向相反，有人透過你的連結下單，蝦皮付你佣金（商城約 2~5%，累積滿 NT$500 可提領）。
+
+**先確認申請的是哪一個 API。** 兩者名字很像但完全不同：
+
+| | 蝦皮 Open Platform（賣家 API） | **蝦皮聯盟行銷 Open API** |
+|---|---|---|
+| 網域 | `partner.shopeemobile.com` | `open-api.affiliate.shopee.tw` |
+| 對象 | 商城賣家、ERP 系統供應商 | 分潤計畫推廣夥伴 |
+| 本專案要的 | ❌ 不符資格，申請不會過 | ✅ 這個 |
+
+**申請流程**
+
+1. 到 [affiliate.shopee.tw](https://affiliate.shopee.tw/) 點「開始使用」，用既有蝦皮帳號登入
+2. 填個人資料（個人／企業、姓名、聯絡方式）
+3. 填**媒體資料**——需提供社群帳號或網站
+4. 送出後人工審核，約 **2~5 個工作天**
+5. 通過後在分潤後台的 **Open API** 區塊自行建立並查看 App ID 與 Secret
+
+**門檻**：任一社群平台至少 300 位好友／追蹤者，或網站具一定流量。被拒可補件重送。
+
+**API 端點**：`https://open-api.affiliate.shopee.tw/graphql`（GraphQL，SHA256 簽章）
+**互動測試工具**：[Open API Explorer V2](https://open-api.affiliate.shopee.vn/explorer/v2)
+
+**拿到金鑰後，先驗證覆蓋率再切換**
+
+聯盟 API 只收錄**加入分潤計畫的賣場**，二手個人賣家是否涵蓋其中必須實測：
+
+```bash
+python -m src.scripts.probe_shopee_affiliate
+```
+
+腳本會印出原始筆數、通過 L1 的筆數、標題含二手關鍵字的筆數，並直接給出「值得切換」或「覆蓋率不足，維持瀏覽器爬蟲」的判斷。覆蓋率不足就別填金鑰，繼續走本機排程。
+
+**填入設定**
+
+```bash
+# .env（本機）
+SHOPEE_APP_ID=你的AppID
+SHOPEE_APP_SECRET=你的Secret
+```
+
+雲端則加到 GitHub Secrets（見下方部署步驟表格）。只要這兩個值非空，`ShopeeScraper` 就會自動改走 API，不需要改任何程式碼。
+
+**兩個維運注意事項**
+
+- 分潤帳號**可能因長期零轉換被停用**，那會讓 API 這條路突然中斷。Discord heartbeat 會直接報 ⛔ 與原因，不會靜默變成 0 筆。
+- `productOfferV2` 除了 `productLink` 還回傳 `offerLink`（你的分潤追蹤連結）。目前實作用 `productLink` 當資料庫主鍵，因為它穩定；`offerLink` 可能帶浮動追蹤參數，直接當主鍵會導致每次執行都新增重複資料。要導購分潤需另加欄位分開存。
+
 ### 部署步驟
 
 1. **Neon PostgreSQL**：在 [neon.tech](https://neon.tech) 建立免費 project，取得連線字串（格式：`postgresql+psycopg2://user:pass@host.neon.tech/dbname?sslmode=require`）。首次本地執行 `DATABASE_URL=<neon_url> python -m src.main` 以自動建表。
@@ -101,7 +151,7 @@ GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
    | `GEMINI_API_KEY` | Google AI Studio Key |
    | `DISCORD_WEBHOOK_URL` | Discord Webhook URL（選用） |
    | `ALERT_VFM_THRESHOLD` | VFM 推播閾值，預設 500（選用） |
-   | `SHOPEE_APP_ID` | 蝦皮聯盟行銷 AppID（選用；設了才會在 CI 上跑蝦皮） |
+   | `SHOPEE_APP_ID` | 蝦皮聯盟行銷 AppID（選用；設了才會在 CI 上跑蝦皮，[怎麼申請](#申請蝦皮聯盟行銷-open-api)） |
    | `SHOPEE_APP_SECRET` | 蝦皮聯盟行銷 Secret（選用） |
 
 3. **GitHub Actions**：push `.github/workflows/scraper.yml` 後自動啟用。可到 Actions 頁面手動 dispatch 測試。每天執行完畢後 Discord 會收到 heartbeat 通知——**某來源爬取失敗時會顯示 ⛔ 與失敗原因，不會偽裝成「0 筆」**。
@@ -114,8 +164,11 @@ GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
 5. **Streamlit Community Cloud**：連結 GitHub repo → Main file path 設為 `streamlit_app.py` → Secrets 貼入：
    ```toml
    DATABASE_URL = "postgresql+psycopg2://...?sslmode=require"
+   SAINTECH_URL = "https://channel.saintechtw.com/"   # 選用，頁尾頻道連結
    ```
    Dashboard sidebar 會顯示「🔄 資料庫最後更新時間」確認資料新鮮度。
+
+   兩個平台限制先知道為妙：**不支援自訂網域**（只能用 `你的app名.streamlit.app`，用 CNAME 指過去會因憑證不符而失敗），且**超過約 12 小時無人造訪就會休眠**，下次開啟需等它重新啟動。部署後 repo 與 branch 即固定，設定頁只有 General／Sharing／Secrets，要換分支只能重新部署一個 app。
 
 ---
 
@@ -145,14 +198,14 @@ python -m src.scripts.check_db
 
 ### 驗證蝦皮 Affiliate API 覆蓋率
 
-聯盟行銷 API 回傳的是「已加入聯盟計畫的賣場商品」，二手個人賣家是否涵蓋其中**必須實測**。拿到 `SHOPEE_APP_ID` / `SHOPEE_APP_SECRET` 後先跑：
+申請流程與門檻見上方「[申請蝦皮聯盟行銷 Open API](#申請蝦皮聯盟行銷-open-api)」。拿到金鑰後：
 
 ```bash
 python -m src.scripts.probe_shopee_affiliate
 python -m src.scripts.probe_shopee_affiliate --keyword "MacBook Pro 二手" --pages 2 --dump nodes.json
 ```
 
-它會印出原始筆數、通過 L1 的筆數、標題含二手關鍵字的筆數與樣本清單，並直接給出「值得切換」或「覆蓋率不足，維持瀏覽器爬蟲」的判斷。
+`--dump` 會把原始回應寫成 JSON，方便檢查欄位。若 GraphQL 回報欄位錯誤，代表 TW schema 與 `_build_query()` 請求的欄位有出入，縮減 `src/scrapers/shopee_api.py` 裡的欄位清單即可。
 
 ### 測試 Discord 推播
 
