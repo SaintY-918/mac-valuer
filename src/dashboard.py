@@ -33,39 +33,31 @@ _db_url = _read_secret("DATABASE_URL")
 if _db_url:
     os.environ["DATABASE_URL"] = _db_url
 
+from src.calculator.score_engine import (  # noqa: E402
+    RAM_BONUS_THRESHOLD_GB, SSD_BONUS_THRESHOLD_GB, ScoringWeights,
+    depreciation, form_factor_key, vfm_from_mapping,
+)
 from src.database.db_manager import DBManager  # noqa: E402 (after env injection)
+from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark  # noqa: E402
 from src.parser.condition_flags import find_defects  # noqa: E402
 
-_BENCH = {
-    "M1": 8500, "M1 Pro": 12000, "M1 Max": 12500, "M1 Ultra": 24000,
-    "M2": 10000, "M2 Pro": 14000, "M2 Max": 14500, "M2 Ultra": 28000,
-    "M3": 11500, "M3 Pro": 15500, "M3 Max": 21000,
-    "M4": 14500, "M4 Pro": 22000, "M4 Max": 26000,
-    "M5": 17933, "M5 Pro": 28436, "M5 Max": 29233,
+# Scoring lives in src/calculator/score_engine — see the note there. The
+# dashboard used to keep its own copy of the formula and benchmark table, and
+# the two drifted apart.
+_BENCH = CHIP_BENCHMARKS
+
+# Slider defaults are read off ScoringWeights rather than retyped, so the page
+# opens on exactly the weights the backend scores with.
+_W = ScoringWeights()
+DEFAULT_SLIDERS = {
+    "ram_mult": _W.ram_multiplier, "ssd_mult": _W.ssd_multiplier,
+    "w_air13": _W.form_air13, "w_air15": _W.form_air15,
+    "w_pro13": _W.form_pro13, "w_pro14": _W.form_pro14, "w_pro16": _W.form_pro16,
 }
-
-_DEFAULT_FORM_W = {
-    "air13":  1.00,
-    "air15":  1.08,
-    "pro13":  1.00,
-    "pro14":  1.18,
-    "pro16":  1.22,
-}
-
-
-def _form_key(row: dict) -> str:
-    s  = str(row.get("series") or "").lower()
-    sc = float(row.get("screen_size") or 13.3)
-    if "air" in s:
-        return "air15" if sc >= 15.0 else "air13"
-    if sc >= 15.0:
-        return "pro16"
-    if sc >= 14.0:
-        return "pro14"
-    return "pro13"
 
 
 def _nan_safe(val, default):
+    """DataFrame cells arrive as NaN rather than None, and NaN is truthy."""
     import math
     if val is None:
         return default
@@ -75,21 +67,6 @@ def _nan_safe(val, default):
     except (TypeError, ValueError):
         pass
     return val or default
-
-
-def _recalc_vfm(row: dict, w: dict) -> float:
-    price = float(_nan_safe(row.get("price"), 0))
-    if price <= 0:
-        return 0.0
-    chip  = str(row.get("chip") or "")
-    base  = _BENCH.get(chip, 5000)
-    year  = int(_nan_safe(row.get("release_year"), 2020))
-    age   = max(0, datetime.date.today().year - year)
-    depr  = 0.9 ** age
-    ram_m  = w["ram"] if _nan_safe(row.get("ram_gb"), 0) >= 16   else 1.0
-    ssd_m  = w["ssd"] if _nan_safe(row.get("ssd_gb"), 0) >= 1024 else 1.0
-    form_m = w.get(_form_key(row), 1.0)
-    return round(base * depr * ram_m * ssd_m * form_m / price * 1000, 2)
 
 
 @st.cache_resource
@@ -403,9 +380,7 @@ with st.sidebar:
             "min_price": 0, "max_price": 0, "show_sold": False,
             "hide_defects": False,
             "source_filter": list(SOURCES),
-            "ram_mult": 1.25, "ssd_mult": 1.1,
-            "w_air13": 1.00, "w_air15": 1.08,
-            "w_pro13": 1.00, "w_pro14": 1.18, "w_pro16": 1.22,
+            **DEFAULT_SLIDERS,
             "page_num": 1,
         })
 
@@ -450,9 +425,7 @@ with st.sidebar:
 
     def _reset_vfm_weights():
         st.session_state.update({
-            "ram_mult": 1.25, "ssd_mult": 1.1,
-            "w_air13": 1.00, "w_air15": 1.08,
-            "w_pro13": 1.00, "w_pro14": 1.18, "w_pro16": 1.22,
+            **DEFAULT_SLIDERS,
         })
 
     with st.expander(":material/tune: VFM 評分設定"):
@@ -476,9 +449,7 @@ with st.sidebar:
             "min_price": 0, "max_price": 0, "show_sold": False,
             "hide_defects": False,
             "source_filter": list(SOURCES),
-            "ram_mult": 1.25, "ssd_mult": 1.1,
-            "w_air13": 1.00, "w_air15": 1.08,
-            "w_pro13": 1.00, "w_pro14": 1.18, "w_pro16": 1.22,
+            **DEFAULT_SLIDERS,
             "page_num": 1,
         })
 
@@ -498,11 +469,13 @@ with st.sidebar:
     st.sidebar.caption("資料來源：PTT MacShop　｜　蝦皮")
 
 # ── Fetch from DB (direct, no FastAPI required) ────────────────────────────────
-weights = {
-    "ram": ram_mult, "ssd": ssd_mult,
-    "air13": w_air13, "air15": w_air15,
-    "pro13": w_pro13, "pro14": w_pro14, "pro16": w_pro16,
-}
+# The sliders write straight into the shared weight model, so the page and the
+# backend cannot drift apart again.
+weights = ScoringWeights(
+    ram_multiplier=ram_mult, ssd_multiplier=ssd_mult,
+    form_air13=w_air13, form_air15=w_air15,
+    form_pro13=w_pro13, form_pro14=w_pro14, form_pro16=w_pro16,
+)
 
 _selected_sources: list = source_filter or []
 # get_filtered_deals takes a single source, so only that case goes to SQL.
@@ -548,7 +521,7 @@ except Exception as exc:
     st.stop()
 
 # ── Compute VFM thresholds from ALL available deals (unfiltered) ───────────────
-_all_scores = [_recalc_vfm(d, weights) for d in all_available if _nan_safe(d.get("price"), 0) > 0]
+_all_scores = [vfm_from_mapping(d, weights) for d in all_available if _nan_safe(d.get("price"), 0) > 0]
 p75 = float(np.percentile(_all_scores, 75)) if _all_scores else 350.0
 p50 = float(np.percentile(_all_scores, 50)) if _all_scores else 250.0
 
@@ -569,7 +542,7 @@ if len(_selected_sources) == 0:
     st.stop()
 
 # ── Recalculate VFM with user weights ─────────────────────────────────────────
-df["vfm_score"] = df.apply(lambda r: _recalc_vfm(r.to_dict(), weights), axis=1)
+df["vfm_score"] = df.apply(lambda r: vfm_from_mapping(r.to_dict(), weights), axis=1)
 df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 
 # ── Header ─────────────────────────────────────────────────────────────────────
@@ -619,15 +592,17 @@ with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
 | SSD 加成 | ≥1 TB 時套用 SSD 加權（預設×1.1）|
 | 形態加成 | Air 13"×1.00 / Air 15"×1.08 / Pro 13"×1.00 / Pro 14"×1.18 / Pro 16"×1.22 |
 """)
+        # Every figure here comes from score_engine, so the breakdown shown to
+        # the reader cannot disagree with the score above it.
         top = df.iloc[0].to_dict()
         chip_t = str(top.get("chip") or "")
-        base_t = _BENCH.get(chip_t, 5000)
-        year_t = int(top.get("release_year") or 2020)
+        base_t = get_benchmark(chip_t)
+        year_t = int(_nan_safe(top.get("release_year"), datetime.date.today().year))
         age_t  = max(0, datetime.date.today().year - year_t)
-        depr_t = round(0.9 ** age_t, 4)
-        r_t    = ram_mult if (top.get("ram_gb") or 0) >= 16   else 1.0
-        s_t    = ssd_mult if (top.get("ssd_gb") or 0) >= 1024 else 1.0
-        form_t = weights.get(_form_key(top), 1.0)
+        depr_t = round(depreciation(year_t), 4)
+        r_t    = ram_mult if _nan_safe(top.get("ram_gb"), 0) >= RAM_BONUS_THRESHOLD_GB else 1.0
+        s_t    = ssd_mult if _nan_safe(top.get("ssd_gb"), 0) >= SSD_BONUS_THRESHOLD_GB else 1.0
+        form_t = weights.form_weight(form_factor_key(top.get("series"), top.get("screen_size")))
         adj_t  = base_t * depr_t * r_t * s_t * form_t
         price_t = float(top.get("price") or 1)
         st.markdown(f"**最高分物件分解**（{str(top.get('original_title',''))[:30]}）")

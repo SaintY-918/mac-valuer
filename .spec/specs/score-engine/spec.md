@@ -18,6 +18,20 @@ VFM = 晶片基準分 × 年份折舊 × RAM加成 × SSD加成 × 形態加成 
 | SSD 加成 | ≥1 TB 時套用（預設 ×1.1） |
 | 形態加成 | Air 13"×1.00／Air 15"×1.08／Pro 13"×1.00／Pro 14"×1.18／Pro 16"×1.22 |
 
+**公式只能有一份實作。** 所有 VFM 計算一律經由 `src/calculator/score_engine.py`：
+
+| 呼叫端持有 | 使用 |
+|---|---|
+| `MacBookSpec` | `get_vfm_score(spec, weights)` |
+| 原始 row／DataFrame 列 | `vfm_from_mapping(row, weights)` |
+
+兩者共用 `adjusted_score()`，不得各自重算。Dashboard 曾自帶一份公式與基準表，
+兩者漂移到 125 筆中有 59 筆分數不同（最大差 55 分），其中 7 筆落在
+Discord 警報門檻的兩側——網頁顯示「優秀」卻永不推播，或會推播卻顯示為普通。
+
+形態加成**必須同時看 `series` 與 `screen_size`**，判定邏輯集中於 `form_factor_key()`。
+權重集中於 `ScoringWeights`，Dashboard 的滑桿預設值由其推導，不得另行硬編碼。
+
 #### 6.X.2 晶片抽取（`main.py: force_extract_chip`）
 
 - **不得寫死世代清單。** 原本的 `tiers = ["M4 MAX", ..., "M1"]` 停在 M4，導致

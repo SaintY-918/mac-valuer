@@ -7,14 +7,9 @@ class ModelSeries(str, Enum):
     PRO_13 = "Pro 13"
     PRO_14_16 = "Pro 14/16"
 
-    @property
-    def weight(self) -> float:
-        weights = {
-            ModelSeries.AIR: 1.0,
-            ModelSeries.PRO_13: 1.05,
-            ModelSeries.PRO_14_16: 1.25
-        }
-        return weights[self]
+    # No weight property here. Scoring multipliers live in ScoringWeights
+    # (src/calculator/score_engine.py) and nowhere else — this class once
+    # carried a third, conflicting set of numbers that nothing consumed.
 
 class MacBookSpec(BaseModel):
     chip: Optional[str] = Field(None, description="e.g., M1, M2 Pro, M3 Max")
@@ -30,11 +25,3 @@ class MacBookSpec(BaseModel):
     condition: Optional[str] = Field(None, description="Physical condition, e.g., '全新', '輕微使用痕跡'")
     is_year_inferred: bool = False
     is_spec_inferred: bool = False
-    
-    @property
-    def ram_weight(self) -> float:
-        return 1.2 if (self.ram_gb and self.ram_gb >= 16) else 1.0
-
-    @property
-    def model_weight(self) -> float:
-        return self.series.weight if self.series else 1.0

@@ -73,9 +73,11 @@ def list_deals(
     model_type: Optional[str] = Query(None),
     ram_multiplier: float = Query(1.25),
     ssd_multiplier: float = Query(1.1),
-    model_weight_air: float = Query(1.0),
-    model_weight_pro13: float = Query(1.0),
-    model_weight_pro14_16: float = Query(1.25),
+    form_air13: float = Query(1.00),
+    form_air15: float = Query(1.08),
+    form_pro13: float = Query(1.00),
+    form_pro14: float = Query(1.18),
+    form_pro16: float = Query(1.22),
 ):
     """列出符合條件的二手 Mac 物件，每筆附帶 VFM 分數，預設只回傳 available 狀態。"""
     db = DBManager()
@@ -92,9 +94,11 @@ def list_deals(
     weights = ScoringWeights(
         ram_multiplier=ram_multiplier,
         ssd_multiplier=ssd_multiplier,
-        model_weight_air=model_weight_air,
-        model_weight_pro13=model_weight_pro13,
-        model_weight_pro14_16=model_weight_pro14_16,
+        form_air13=form_air13,
+        form_air15=form_air15,
+        form_pro13=form_pro13,
+        form_pro14=form_pro14,
+        form_pro16=form_pro16,
     )
     deals = [_attach_vfm(d, weights) for d in deals]
     deals.sort(key=lambda d: d.get("vfm_score") or 0, reverse=True)
