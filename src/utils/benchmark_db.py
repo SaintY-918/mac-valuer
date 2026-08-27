@@ -16,6 +16,13 @@ CHIP_BENCHMARKS: Dict[str, int] = {
     "M4": 14500,
     "M4 Pro": 22000,
     "M4 Max": 26000,
+    # M5 figures are EXTRAPOLATED from the generation-on-generation trend above
+    # (~+17%), not measured. M5 machines were being dropped entirely for want of
+    # an entry, and a rough score beats discarding the newest listings — but
+    # replace these with real Geekbench numbers when convenient.
+    "M5": 17000,
+    "M5 Pro": 25000,
+    "M5 Max": 30000,
 }
 
 def get_benchmark(chip: str) -> int:

@@ -40,6 +40,8 @@ _BENCH = {
     "M2": 10000, "M2 Pro": 14000, "M2 Max": 14500,
     "M3": 11500, "M3 Pro": 15500, "M3 Max": 21000,
     "M4": 14500, "M4 Pro": 22000, "M4 Max": 26000,
+    # Extrapolated, see src/utils/benchmark_db.py — keep the two in sync.
+    "M5": 17000, "M5 Pro": 25000, "M5 Max": 30000,
 }
 
 _DEFAULT_FORM_W = {

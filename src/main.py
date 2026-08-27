@@ -28,13 +28,31 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
+# Matches any Apple Silicon generation rather than a hardcoded list. The list
+# stopped at M4, so every M5 listing came back with no chip and was discarded by
+# the filter below — silently losing the newest and priciest machines, which are
+# exactly the ones worth tracking. A regex means the next generation needs only
+# a benchmark entry, not a code change here.
+_CHIP_RE = re.compile(r"\bM(\d{1,2})\s*(PRO|MAX|ULTRA)?\b", re.I)
+
+
 def force_extract_chip(title: str) -> str | None:
-    t = title.upper()
-    tiers = ["M4 MAX", "M4 PRO", "M4", "M3 MAX", "M3 PRO", "M3", "M2 MAX", "M2 PRO", "M2", "M1 MAX", "M1 PRO", "M1"]
-    for chip in tiers:
-        if chip in t:
-            return chip
-    return None
+    """Best chip found in the title, preferring the highest tier mentioned.
+
+    Sellers pad titles with keywords, so "M1 Pro Max" turns up even though no
+    such chip exists. Only the variant adjacent to the generation counts, which
+    reads that as M1 Pro — the lower tier. That is the safe direction: a lower
+    benchmark understates VFM, and an overstated one would fire a false
+    bargain alert.
+    """
+    best = None
+    for gen, variant in _CHIP_RE.findall(title.upper()):
+        name = f"M{int(gen)}" + (f" {variant.title()}" if variant else "")
+        # "M4 Max" beats a bare "M4" in the same title; higher generations win.
+        rank = (int(gen), {"": 0, "PRO": 1, "MAX": 2, "ULTRA": 3}[variant.upper()])
+        if best is None or rank > best[0]:
+            best = (rank, name)
+    return best[1] if best else None
 
 
 _INVALID_CHIPS = {"unknown", "none", "null", "n/a", ""}
