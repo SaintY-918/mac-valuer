@@ -1,326 +1,174 @@
 # mac-valuer
 
-二手 MacBook 行情爬蟲與估價系統。自動從 PTT MacShop 爬取販售文章，透過 LLM 解析規格，計算 VFM（Value for Money）分數，找出市場上最划算的機器。
+二手 MacBook 行情追蹤與估價系統。從三個平台自動蒐集販售資訊，用 LLM 解析規格，
+換算成可跨機型比較的性價比分數，找出市場上真正划算的機器。
+
+**線上版**：[mac-valuer.streamlit.app](https://mac-valuer.streamlit.app)
 
 ---
 
-## 系統架構概覽
+## 這個專案在解決什麼
 
-```
-PTT MacShop RSS
-      ↓
-  爬蟲 (async Playwright)
-      ↓
-  LLM 解析 (Gemini) + Regex fallback
-      ↓
-  SQLite 資料庫 (本地) / PostgreSQL (雲端)
-      ↓
-  VFM 評分引擎 (動態權重)
-      ↓
-  FastAPI  ←→  Streamlit Dashboard
-```
+買二手 MacBook 的困難不在找不到物件，而在**無法比較**：
+
+- 一台 2020 年的 M1 賣 15,000，一台 2025 年的 M4 賣 30,000，哪個划算？
+- 同樣是 M3，16G/512G 和 8G/256G 的合理價差是多少？
+- 賣家的標題寫法各不相同，規格散落在標題、內文、甚至網址裡
+
+系統把每筆物件換算成 **VFM（Value For Money）分數**——每花一千元買到多少效能——
+讓不同世代、不同規格的機器可以並排比較。
 
 ---
 
-## 環境設定
+## 架構
 
-### 1. 安裝 Python 依賴
-
-建議使用 Python 3.11+。
-
-```bash
-pip install -r requirements.txt
+```
+PTT MacShop (Atom)     蝦皮 (瀏覽器)      旋轉拍賣 (JSON-LD)
+        │                    │                    │
+        └────────────────────┼────────────────────┘
+                             ▼
+                  BaseScraper（Strategy Pattern）
+                             ▼
+              Gemini LLM 解析 ＋ Regex 抽取（規則優先）
+                             ▼
+                    Neon PostgreSQL
+                             ▼
+                      VFM 評分引擎
+                    ┌────────┴────────┐
+                    ▼                 ▼
+          Streamlit Dashboard    Discord 撿漏推播
 ```
 
-安裝 Playwright 瀏覽器核心（首次需執行）：
-
-```bash
-playwright install chromium
-```
-
-### 2. 設定環境變數
-
-複製範本並填入你的金鑰：
-
-```bash
-cp .env.example .env
-```
-
-開啟 `.env`，至少填入以下兩項才能正常運作：
-
-| 變數 | 說明 |
-|------|------|
-| `GEMINI_API_KEY` | Google AI Studio 取得的 API Key |
-| `DATABASE_URL` | 本地開發保持預設即可；上雲端時改成 PostgreSQL 連線字串 |
-| `DISCORD_WEBHOOK_URL` | （選用）Discord 頻道 Webhook URL；若未設定則撿漏推播自動停用、pipeline 不報錯 |
-| `ALERT_VFM_THRESHOLD` | （選用）VFM 推播閾值，預設 `500`；只在 `vfm_score > threshold` 時觸發 Discord 推播 |
+**執行位置**：PTT 與旋轉拍賣跑在 GitHub Actions（純 HTTP，無反爬牆）；
+蝦皮需住宅 IP，跑在本機排程。原因見下。
 
 ---
 
-## 零成本雲端部署（P7）
+## 幾個值得一提的工程決策
+
+### 蝦皮擋的是 IP，不是憑證 —— 這是實測，不是推測
+
+雲端排程的蝦皮資料長期為 0。原本歸納出四個原因，但其中三個都能在 CI 修好，
+所以第四個「IP 被擋」從來沒有被驗證的機會。
+
+我補齊了 session 還原與瀏覽器安裝，讓 runner 帶著 **22 個有效 cookie** 去存取，結果仍被導向：
 
 ```
-GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
-  └─ python -m src.main --source ptt   （有 Affiliate 金鑰時為 all）
-       └─ 寫入 ─┐
-                ├─► Neon PostgreSQL (免費 0.5 GB, sslmode=require)
-本機 Windows 排程 ┘                    ▲
-  └─ scripts/run_local_shopee.ps1      │
-       └─ python -m src.main --source shopee
-                                       │
-              Streamlit Community Cloud (免費, 公開)
-              直連 DBManager.get_filtered_deals()
+shopee.tw/verify/captcha?...&scene=crawler_item
 ```
 
-### 為什麼蝦皮要分開跑
+`scene=crawler_item` 是蝦皮自己的分類標記。**憑證有效卻仍被攔，代表判斷依據是執行環境。**
+換任何免費雲端主機都是同樣結果——稀缺的不是運算資源，是非機房 IP。
 
-蝦皮的**瀏覽器爬蟲無法在 GitHub Actions 上運作**。原本的三個原因裡，前兩個其實都能在 CI 修好：
+→ [`docs/decisions.md` #1](docs/decisions.md)
 
-| # | 原因 | 是否可解 |
-|---|---|---|
-| 1 | 登入 session 存在本機，沒被帶到 runner 上 | ✅ 可解（存成 secret，見 `export_shopee_session.py`） |
-| 2 | `camoufox` 的 Firefox 核心沒安裝（workflow 只裝了 Chromium） | ✅ 可解（`python -m camoufox fetch`） |
-| 3 | **蝦皮把 runner 的 IP 段判定為爬蟲** | ❌ **無解** |
+### 與其硬碰反爬，不如找願意讓你抓的平台
 
-第 3 點經實測確認（`.github/workflows/shopee-ci-test.yml`）。修掉前兩點之後，runner 帶著
-22 個有效 cookie 存取搜尋頁，仍被導向：
+蝦皮需要住宅 IP、登入 session，且會週期性跳驗證碼，無法完全無人值守。
+旋轉拍賣的 `robots.txt` 明確寫出哪些能爬：
 
 ```
-https://shopee.tw/verify/captcha?...&scene=crawler_item&...
+Disallow: /search/          # 不碰
+Disallow: /*?               # 不用任何帶查詢字串的網址
+Sitemap:  ...               # 主要入口
 ```
 
-`scene=crawler_item` 是蝦皮反爬系統的分類標記。**session 有效卻照樣被攔，代表攔截看的是
-執行環境而不是憑證**——換一台免費的機房主機只是換一個會被擋的 IP。瀏覽器爬蟲必須跑在
-住宅或行動網路下。
+照著它的規則走，從官方 sitemap 取商品、解析 schema.org JSON-LD——
+**純 HTTP、不需瀏覽器、可在 CI 執行**，穩定度與 PTT 同級。
 
-因此有兩條路徑，由 `ShopeeScraper.fetch_listings()` 自動選擇：
+### 資料錯比資料缺更糟
 
-| 條件 | 走的路徑 | 可否在 CI 跑 |
-|---|---|---|
-| `.env` 有 `SHOPEE_APP_ID` + `SHOPEE_APP_SECRET` | 蝦皮聯盟行銷 Open API（簽章 HTTP，無反爬） | ✅ |
-| 兩者留空 | camoufox 瀏覽器爬蟲 | ❌ 僅本機 |
+規格抽取寧可回傳 `None` 也不猜測。實際踩過的坑：
 
-`src/main.py` 不含任何平台判斷，切換完全封裝在 scraper 內（Strategy Pattern，見 `.spec/specs/scraper/spec.md`）。
-
-### 申請蝦皮聯盟行銷 Open API
-
-免費。分潤計畫不收申請費也不收月費——方向相反，有人透過你的連結下單，蝦皮付你佣金（商城約 2~5%，累積滿 NT$500 可提領）。
-
-**先確認申請的是哪一個 API。** 兩者名字很像但完全不同：
-
-| | 蝦皮 Open Platform（賣家 API） | **蝦皮聯盟行銷 Open API** |
-|---|---|---|
-| 網域 | `partner.shopeemobile.com` | `open-api.affiliate.shopee.tw` |
-| 對象 | 商城賣家、ERP 系統供應商 | 分潤計畫推廣夥伴 |
-| 本專案要的 | ❌ 不符資格，申請不會過 | ✅ 這個 |
-
-> ⚠️ **Open API 金鑰不能自助申請，須另外聯繫蝦皮開通。**
-> 分潤計畫審核通過**不等於**有 API 權限。通過後 `https://affiliate.shopee.tw/open_api`
-> 會顯示「您目前無權限申請蝦皮分潤計畫之Open API金鑰。請聯繫我們以開通權限」，
-> 且「申請API金鑰」按鈕是停用狀態——必須透過該頁的「聯繫我們」提出申請。
-> 在金鑰到手之前，**本機排程（`scripts/run_local_shopee.ps1`）是實際運作中的資料來源，
-> 不是過渡方案**。
-
-**申請流程**
-
-1. 到 [affiliate.shopee.tw](https://affiliate.shopee.tw/) 點「開始使用」，用既有蝦皮帳號登入
-2. 填個人資料（個人／企業、姓名、聯絡方式）
-3. 填**媒體資料**——需提供社群帳號或網站
-4. 送出後人工審核，約 **2~5 個工作天**
-5. 通過後前往 `https://affiliate.shopee.tw/open_api`（**選單裡沒有這一項，要直接打網址**）
-6. 該頁的「聯繫我們」提出開通 Open API 權限的申請，說明用途；開通後才能按「申請API金鑰」
-   取得 App ID 與 API 金鑰
-
-**門檻**：任一社群平台至少 300 位好友／追蹤者，或網站具一定流量。被拒可補件重送。
-
-**Product Feed 也一樣被鎖住**：後台「特殊操作 → Product Feed」實測顯示「尚無數據」，
-feed 由蝦皮配置給合作夥伴，推廣夥伴無法自行建立。兩條官方路徑都得先請蝦皮開通，
-建議在同一封訊息裡一併提出。
-
-**API 端點**：`https://open-api.affiliate.shopee.tw/graphql`（GraphQL，SHA256 簽章）
-**互動測試工具**：[Open API Explorer V2](https://open-api.affiliate.shopee.vn/explorer/v2)
-
-**拿到金鑰後，先驗證覆蓋率再切換**
-
-聯盟 API 只收錄**加入分潤計畫的賣場**，二手個人賣家是否涵蓋其中必須實測：
-
-```bash
-python -m src.scripts.probe_shopee_affiliate
+```
+『澄橘』Macbook Pro 13 2022 M2 8C10G/8G/256G
+                        ↑ 8核CPU / 10核GPU
+被讀成 RAM=10、SSD=8TB → 8TB 取得 SSD 加成 → VFM 被推高
 ```
 
-腳本會印出原始筆數、通過 L1 的筆數、標題含二手關鍵字的筆數，並直接給出「值得切換」或「覆蓋率不足，維持瀏覽器爬蟲」的判斷。覆蓋率不足就別填金鑰，繼續走本機排程。
+缺值由 LLM 補、或由計分器套用預設；**錯值會直接進入評分公式**。
+同理，晶片抽取遇到賣家堆關鍵字寫出的「M1 Pro Max」時取**較低**的 M1 Pro——
+低估只是少一次機會，高估會發出假的撿漏警報。
 
-**填入設定**
+### 評分公式獎勵低價，而壞掉的機器正因為壞掉才便宜
 
-```bash
-# .env（本機）
-SHOPEE_APP_ID=你的AppID
-SHOPEE_APP_SECRET=你的Secret
-```
+實測分數最高的兩筆分別是「瑕疵機」與「外接機」（螢幕已壞），第一名還掛著「最划算」徽章。
 
-雲端則加到 GitHub Secrets（見下方部署步驟表格）。只要這兩個值非空，`ShopeeScraper` 就會自動改走 API，不需要改任何程式碼。
+處理方式是**標註而不扣分**：折價多少沒有客觀答案，任何懲罰係數都是憑空訂的；
+而便宜的瑕疵機對能自行維修的人仍是合理選擇。提供資訊、由人判斷。
 
-**兩個維運注意事項**
+只標**功能性**瑕疵——外觀使用痕跡是二手常態，全部標註會讓讀者學會忽略徽章。
+偵測需處理否定詞：真實資料裡有「外觀**無**傷**無**碰撞」這種含關鍵字但語意相反的寫法。
 
-- 分潤帳號**可能因長期零轉換被停用**，那會讓 API 這條路突然中斷。Discord heartbeat 會直接報 ⛔ 與原因，不會靜默變成 0 筆。
-- `productOfferV2` 除了 `productLink` 還回傳 `offerLink`（你的分潤追蹤連結）。目前實作用 `productLink` 當資料庫主鍵，因為它穩定；`offerLink` 可能帶浮動追蹤參數，直接當主鍵會導致每次執行都新增重複資料。要導購分潤需另加欄位分開存。
+### 「本次沒看到」不等於「下架了」
 
-### 部署步驟
-
-1. **Neon PostgreSQL**：在 [neon.tech](https://neon.tech) 建立免費 project，取得連線字串（格式：`postgresql+psycopg2://user:pass@host.neon.tech/dbname?sslmode=require`）。首次本地執行 `DATABASE_URL=<neon_url> python -m src.main` 以自動建表。
-
-2. **GitHub Secrets**（`Settings → Secrets → Actions`）：
-
-   | Secret 名稱 | 內容 |
-   |---|---|
-   | `DATABASE_URL` | Neon 連線字串 |
-   | `GEMINI_API_KEY` | Google AI Studio Key |
-   | `DISCORD_WEBHOOK_URL` | Discord Webhook URL（選用） |
-   | `ALERT_VFM_THRESHOLD` | VFM 推播閾值，預設 500（選用） |
-   | `SHOPEE_APP_ID` | 蝦皮聯盟行銷 AppID（選用；設了才會在 CI 上跑蝦皮，[怎麼申請](#申請蝦皮聯盟行銷-open-api)） |
-   | `SHOPEE_APP_SECRET` | 蝦皮聯盟行銷 Secret（選用） |
-
-3. **GitHub Actions**：push `.github/workflows/scraper.yml` 後自動啟用。可到 Actions 頁面手動 dispatch 測試。每天執行完畢後 Discord 會收到 heartbeat 通知——**某來源爬取失敗時會顯示 ⛔ 與失敗原因，不會偽裝成「0 筆」**。
-
-4. **本機蝦皮排程**（在 Affiliate API 通過前的資料來源）：先跑一次
-   `SHOPEE_HEADLESS=false python -m src.main --source shopee` 手動登入建立 session，
-   再依 `scripts/run_local_shopee.ps1` 檔頭註解註冊 Windows 工作排程器。
-   `.env` 的 `DATABASE_URL` 要指向 Neon，本機跑的結果才會進到雲端 Dashboard。
-
-5. **Streamlit Community Cloud**：連結 GitHub repo → Main file path 設為 `streamlit_app.py` → Secrets 貼入：
-   ```toml
-   DATABASE_URL = "postgresql+psycopg2://...?sslmode=require"
-   SAINTECH_URL = "https://channel.saintechtw.com/"   # 選用，頁尾頻道連結
-   ```
-   Dashboard sidebar 會顯示「🔄 資料庫最後更新時間」確認資料新鮮度。
-
-   兩個平台限制先知道為妙：**不支援自訂網域**（只能用 `你的app名.streamlit.app`，用 CNAME 指過去會因憑證不符而失敗），且**超過約 12 小時無人造訪就會休眠**，下次開啟需等它重新啟動。部署後 repo 與 branch 即固定，設定頁只有 General／Sharing／Secrets，要換分支只能重新部署一個 app。
+一次執行曾將 46 筆物件標記為下架。追查後發現：所有爬蟲取得的都是**取樣視窗**而非完整庫存，
+兩次執行的商品集合可能完全不相交（實測 35 vs 30，重疊 0）——舊集合並非售出，
+只是被擠出最新清單。改為「連續 14 天未再出現」才判定下架。
 
 ---
 
-## 執行指令（本地開發）
+## 技術棧
 
-### 手動跑一次完整爬蟲 + 估價
-
-```bash
-python -m src.main
-```
-
-執行完畢後會在根目錄產生 `valuation_report.csv`，並在終端機印出前 15 名高 VFM 機器。
-
-只想重新修復/評分/推播既有資料，不重新爬蟲（例如測試 Discord 通知，避免浪費 LLM 額度重新解析新項目）：
-
-```bash
-python -m src.main --skip-scrape
-```
-
-### 確認目前連的是哪個資料庫
-
-```bash
-python -m src.scripts.check_db
-```
-
-印出 `DATABASE_URL` 指向的主機（密碼會遮罩）、是 SQLite 還是 Neon、各來源筆數與最後更新時間。**設定本機蝦皮排程前務必先跑這個**——若顯示 SQLite，爬到的資料只會進本機檔案，不會出現在雲端 Dashboard。
-
-### 驗證蝦皮 Affiliate API 覆蓋率
-
-申請流程與門檻見上方「[申請蝦皮聯盟行銷 Open API](#申請蝦皮聯盟行銷-open-api)」。拿到金鑰後：
-
-```bash
-python -m src.scripts.probe_shopee_affiliate
-python -m src.scripts.probe_shopee_affiliate --keyword "MacBook Pro 二手" --pages 2 --dump nodes.json
-```
-
-`--dump` 會把原始回應寫成 JSON，方便檢查欄位。若 GraphQL 回報欄位錯誤，代表 TW schema 與 `_build_query()` 請求的欄位有出入，縮減 `src/scrapers/shopee_api.py` 裡的欄位清單即可。
-
-### 測試 Discord 推播
-
-```bash
-python -m src.scripts.trigger_test   # 強制標記資料庫中一筆已解析商品，讓它下次跑一定觸發推播
-python -m src.main --skip-scrape     # 不爬蟲，直接修復＋評分＋送出通知
-```
-
-需要先在 `.env` 設定 `DISCORD_WEBHOOK_URL`（Discord 頻道設定 → 整合 → Webhook → 複製 Webhook URL）。
-
-### 啟動 Streamlit Dashboard
-
-```bash
-streamlit run streamlit_app.py
-```
-
-必須從根目錄的 `streamlit_app.py` 進入。直接跑 `streamlit run src/dashboard.py` 會因為 repo 根目錄不在 `sys.path` 而拋 `ModuleNotFoundError: No module named 'src'`。
-
-Dashboard 直連 `DATABASE_URL` 指定的資料庫（本地 SQLite 或 Neon PostgreSQL），不經過 FastAPI。
-
-物件以響應式卡片呈現：視窗 ≥1800px 四欄、≥1200px 三欄、≥700px 兩欄、手機單欄。呈現規範見 [`.spec/specs/api/spec.md`](.spec/specs/api/spec.md)。
-
-### 啟動 FastAPI 伺服器（本地開發用）
-
-```bash
-uvicorn api.main:app --reload --port 8000
-```
-
-API 文件自動產生於：`http://localhost:8000/docs`
-
-### 首次部署前抑制歷史爆推
-
-```bash
-python -m src.scripts.suppress_initial_burst
-```
-
-將現有資料的 `last_alerted_price` 設為目前 `price`，避免第一次啟用 Discord Webhook 時大量舊資料全部觸發推播。
-
-### 排程自動爬取（本地測試用）
-
-使用系統 cron 或 Windows 工作排程器執行：
-
-```bash
-python cronjob.py
-```
-
-建議頻率：每天一次（PTT MacShop 發文量約 10–30 篇/天）。
+| 層 | 選擇 |
+|---|---|
+| 爬蟲 | `feedparser`（PTT）、`camoufox`（蝦皮反指紋）、`requests`（旋轉拍賣） |
+| 解析 | Gemini 3.5 Flash Lite ＋ 自訂 regex；規則優先、LLM 補漏 |
+| 資料庫 | SQLAlchemy → Neon PostgreSQL |
+| 前端 | Streamlit，套用自有設計系統 |
+| API | FastAPI |
+| 排程 | GitHub Actions ＋ Windows 工作排程器 |
 
 ---
 
-## 專案檔案說明
+## 文件
+
+| 文件 | 內容 |
+|---|---|
+| [`docs/setup.md`](docs/setup.md) | 安裝、環境變數、雲端部署 |
+| [`docs/operations.md`](docs/operations.md) | 日常指令、蝦皮申請、疑難排解 |
+| [`docs/decisions.md`](docs/decisions.md) | 決策紀錄，含**延後與否決**的方案 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 變更時間軸 |
+| [`.spec/specs/`](.spec/specs/) | 各模組實作規格 |
+| [`CLAUDE.md`](CLAUDE.md) | AI 協作規範 |
+
+---
+
+## 專案結構
 
 ```
 src/
-├── main.py                ← 主流程入口
+├── main.py                 主流程
+├── scrapers/
+│   ├── base.py             BaseScraper 介面、RawListing
+│   ├── ptt.py              PTT MacShop
+│   ├── shopee.py           蝦皮（瀏覽器；依金鑰自動切換 API）
+│   ├── shopee_api.py       蝦皮聯盟行銷 Open API
+│   └── carousell.py        旋轉拍賣
 ├── parser/
-│   ├── scraper.py         ← PTT 爬蟲（RSS + Playwright）
-│   └── llm_parser.py      ← Gemini LLM 解析 + Regex fallback
-├── models/
-│   └── mac_spec.py        ← MacBookSpec Pydantic 模型
-├── database/
-│   └── db_manager.py      ← SQLAlchemy DB 操作
-├── calculator/
-│   └── score_engine.py    ← VFM 評分公式
-├── processor/
-│   └── data_filter.py     ← 離群值清洗（IQR）
-├── utils/
-│   └── benchmark_db.py    ← Apple Silicon 效能基準分數表
-└── dashboard.py           ← Streamlit 前端
+│   ├── llm_parser.py       Gemini 解析、規格抽取、節流
+│   ├── text_extractor.py   PTT 結構化區塊抽取
+│   └── condition_flags.py  瑕疵偵測
+├── calculator/score_engine.py   VFM 公式
+├── utils/benchmark_db.py        晶片基準分（Geekbench 6 多核）
+├── database/db_manager.py       SQLAlchemy 操作
+├── notifier/discord_notify.py   撿漏推播、每日 heartbeat
+├── scripts/                     診斷與維運工具
+└── dashboard.py                 Streamlit 前端
 ```
 
 ---
 
-## 重構進度
+## 已知問題
 
-| Phase | 範圍 | 狀態 |
-|-------|------|------|
-| P0 | Bug 修復（Gemini model ID、chip fallback、年份錯誤） | ✅ 完成 |
-| P1 | DB 遷移至 SQLAlchemy + env var + status 欄位 | 待執行 |
-| P2 | 爬蟲全改 async + BaseScraper 介面 | 待執行 |
-| P3 | Score Engine 動態化 + FastAPI | 待執行 |
-| P4 | 新增 Optional 欄位 + 前端消費 API | 待執行 |
-
-詳細架構規格見 [CLAUDE.md](CLAUDE.md)。
+- **前後端 VFM 公式不一致**：形態加權的判定依據不同，125 筆中有 59 筆分數對不上。
+  影響 Discord 推播門檻與網頁顯示的一致性。→ [`docs/decisions.md` #7](docs/decisions.md)
+- **蝦皮無法完全自動化**：需住宅 IP，且會週期性要求手動通過驗證碼。
 
 ---
 
-## 注意事項
+## 授權與注意事項
 
-- `.env` 已加入 `.gitignore`，請勿將真實 API Key 提交到版本控制。
-- 首次執行前請確認 `playwright install chromium` 已完成，否則爬蟲會靜默失敗。
-- 本地 SQLite 資料庫預設路徑為專案根目錄的 `mac_deals.db`，可透過 `DATABASE_URL` 修改。
+- `.env`、`shopee_state.json`、`*.db` 已列入 `.gitignore`，請勿提交真實金鑰。
+- 爬蟲遵循各平台的 `robots.txt`；旋轉拍賣僅使用其 sitemap 與商品頁，不碰搜尋頁。
+- 晶片基準分取自 Geekbench 6 多核心，來源標註於 `src/utils/benchmark_db.py`。
