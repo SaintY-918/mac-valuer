@@ -36,16 +36,14 @@ jobs:
       - name: Fetch camoufox browser
         run: python -m camoufox fetch
 
+      # Done in Python rather than `base64 -d | gunzip > file`: that pipeline
+      # rejects any stray whitespace the blob picks up when copied out of a
+      # wrapping terminal, and its redirect creates the output file before the
+      # decode runs, so a failure still leaves an empty file that looks fine.
       - name: Restore Shopee session
         env:
           SHOPEE_STATE_B64: ${{ secrets.SHOPEE_STATE_B64 }}
-        run: |
-          if [ -z "$SHOPEE_STATE_B64" ]; then
-            echo "::error::SHOPEE_STATE_B64 is not set — see export_shopee_session.py"
-            exit 1
-          fi
-          printf '%s' "$SHOPEE_STATE_B64" | base64 -d | gunzip > shopee_state.json
-          python -c "import json;d=json.load(open('shopee_state.json'));print(f'restored {len(d[\"cookies\"])} cookies')"
+        run: python -m src.scripts.restore_shopee_session
 
       - name: Report runner location
         run: |
@@ -60,7 +58,8 @@ jobs:
         run: python -m src.scripts.probe_shopee_browser
 
       # The scraper writes the session back after a successful run; capturing it
-      # shows whether Shopee rotated or invalidated the cookies.
+      # shows whether Shopee rotated or invalidated the cookies. Skipped unless
+      # the file has content, so an empty artifact never implies a good run.
       - name: Upload resulting session for inspection
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,3 +67,4 @@ jobs:
           name: shopee-state-after-run
           path: shopee_state.json
           retention-days: 1
+          if-no-files-found: ignore
