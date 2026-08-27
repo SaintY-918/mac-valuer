@@ -1,6 +1,17 @@
 from typing import Dict
 
-# Common Apple Silicon Benchmark Scores (e.g., Geekbench 6 Multi-core approximate)
+# Apple Silicon benchmark scores — Geekbench 6 multi-core.
+#
+# One source for the whole table, otherwise the numbers are not comparable and
+# neither are the VFM scores derived from them. Spot-checked against published
+# results: M1 8,313 / M2 9,465 / M3 11,649 / M3 Max 20,785, all within a few
+# percent of the values here.
+#
+# Sources:
+#   https://browser.geekbench.com/mac-benchmarks
+#   M5      17,933  https://browser.geekbench.com/macs/macbook-pro-14-inch-2025
+#   M5 Pro  28,436  https://www.notebookcheck.net/Apple-M5-Pro-18-Core-Processor-Benchmarks-and-Specs.1242671.0.html
+#   M5 Max  29,233  https://www.macrumors.com/2026/03/05/m5-max-geekbench-benchmarks/
 CHIP_BENCHMARKS: Dict[str, int] = {
     "M1": 8500,
     "M1 Pro": 12000,
@@ -16,13 +27,12 @@ CHIP_BENCHMARKS: Dict[str, int] = {
     "M4": 14500,
     "M4 Pro": 22000,
     "M4 Max": 26000,
-    # M5 figures are EXTRAPOLATED from the generation-on-generation trend above
-    # (~+17%), not measured. M5 machines were being dropped entirely for want of
-    # an entry, and a rough score beats discarding the newest listings — but
-    # replace these with real Geekbench numbers when convenient.
-    "M5": 17000,
-    "M5 Pro": 25000,
-    "M5 Max": 30000,
+    # Measured, not extrapolated. The generational deltas line up with Apple's
+    # own claims: M4 Pro -> M5 Pro is +29% against their "up to 30% multithreaded",
+    # and M4 Max -> M5 Max is +12% against their "14-15% faster".
+    "M5": 17933,
+    "M5 Pro": 28436,
+    "M5 Max": 29233,
 }
 
 def get_benchmark(chip: str) -> int:

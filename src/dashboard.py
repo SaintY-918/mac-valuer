@@ -37,12 +37,11 @@ from src.database.db_manager import DBManager  # noqa: E402 (after env injection
 from src.parser.condition_flags import find_defects  # noqa: E402
 
 _BENCH = {
-    "M1": 8500, "M1 Pro": 12000, "M1 Max": 12500,
-    "M2": 10000, "M2 Pro": 14000, "M2 Max": 14500,
+    "M1": 8500, "M1 Pro": 12000, "M1 Max": 12500, "M1 Ultra": 24000,
+    "M2": 10000, "M2 Pro": 14000, "M2 Max": 14500, "M2 Ultra": 28000,
     "M3": 11500, "M3 Pro": 15500, "M3 Max": 21000,
     "M4": 14500, "M4 Pro": 22000, "M4 Max": 26000,
-    # Extrapolated, see src/utils/benchmark_db.py — keep the two in sync.
-    "M5": 17000, "M5 Pro": 25000, "M5 Max": 30000,
+    "M5": 17933, "M5 Pro": 28436, "M5 Max": 29233,
 }
 
 _DEFAULT_FORM_W = {
