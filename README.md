@@ -120,8 +120,9 @@ GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
 
 **門檻**：任一社群平台至少 300 位好友／追蹤者，或網站具一定流量。被拒可補件重送。
 
-**另一條可能不需要 API 權限的路**：後台側邊欄「特殊操作 → Product Feed」。商品資料饋送
-通常是可下載或固定網址的商品目錄，若涵蓋二手商品即可直接取用，同樣是官方管道。尚未查證。
+**Product Feed 也一樣被鎖住**：後台「特殊操作 → Product Feed」實測顯示「尚無數據」，
+feed 由蝦皮配置給合作夥伴，推廣夥伴無法自行建立。兩條官方路徑都得先請蝦皮開通，
+建議在同一封訊息裡一併提出。
 
 **API 端點**：`https://open-api.affiliate.shopee.tw/graphql`（GraphQL，SHA256 簽章）
 **互動測試工具**：[Open API Explorer V2](https://open-api.affiliate.shopee.vn/explorer/v2)
