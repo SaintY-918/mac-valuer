@@ -74,11 +74,24 @@ GitHub Actions (cron 每天 UTC 18:00 = 台灣 02:00)
 
 ### 為什麼蝦皮要分開跑
 
-蝦皮的**瀏覽器爬蟲無法在 GitHub Actions 上運作**，這不是設定問題，而是三個結構性限制：
+蝦皮的**瀏覽器爬蟲無法在 GitHub Actions 上運作**。原本的三個原因裡，前兩個其實都能在 CI 修好：
 
-1. 蝦皮反爬會封鎖資料中心 IP（GitHub runner 跑在 Azure 機房），瀏覽器指紋偽裝救不了。
-2. 登入 session（`shopee_state.json`）存在本機，無法帶到用完即丟的 runner 上。
-3. `camoufox` 需要自帶的 Firefox 核心（`python -m camoufox fetch`），CI 上沒有。
+| # | 原因 | 是否可解 |
+|---|---|---|
+| 1 | 登入 session 存在本機，沒被帶到 runner 上 | ✅ 可解（存成 secret，見 `export_shopee_session.py`） |
+| 2 | `camoufox` 的 Firefox 核心沒安裝（workflow 只裝了 Chromium） | ✅ 可解（`python -m camoufox fetch`） |
+| 3 | **蝦皮把 runner 的 IP 段判定為爬蟲** | ❌ **無解** |
+
+第 3 點經實測確認（`.github/workflows/shopee-ci-test.yml`）。修掉前兩點之後，runner 帶著
+22 個有效 cookie 存取搜尋頁，仍被導向：
+
+```
+https://shopee.tw/verify/captcha?...&scene=crawler_item&...
+```
+
+`scene=crawler_item` 是蝦皮反爬系統的分類標記。**session 有效卻照樣被攔，代表攔截看的是
+執行環境而不是憑證**——換一台免費的機房主機只是換一個會被擋的 IP。瀏覽器爬蟲必須跑在
+住宅或行動網路下。
 
 因此有兩條路徑，由 `ShopeeScraper.fetch_listings()` 自動選擇：
 

@@ -11,7 +11,20 @@
   | 上述任一為空 | camoufox 瀏覽器爬蟲（既有實作） | `src/scrapers/shopee.py` |
 
   - **API 路徑限制**：`productOfferV2` 不提供商品描述，`body_content` 只能由標題與價格標註組成；亦不提供 model 層級資料，故 Variant Flattening 不適用，改以 `priceMin` 作為入手價、`priceMax` 併入 body 的價格區間註記。
-  - **瀏覽器路徑限制**：**不可在 GitHub Actions 等機房環境執行**（蝦皮封鎖資料中心 IP、session 無法隨臨時 runner 保存、camoufox 核心未安裝）。排程須改由本機執行（`scripts/run_local_shopee.ps1`）。
+  - **瀏覽器路徑限制**：**不可在 GitHub Actions 等機房環境執行。**
+
+    此限制經 `.github/workflows/shopee-ci-test.yml` 實測確認，非推論。在補齊 session
+    還原與 `camoufox fetch` 之後，runner 帶著 22 個有效 cookie 存取搜尋頁，仍被導向：
+
+    ```
+    https://shopee.tw/verify/captcha?...&scene=crawler_item&...
+    ```
+
+    `scene=crawler_item` 是蝦皮反爬系統對請求的分類標記。session 有效卻仍被攔，
+    表示攔截依據是**執行環境（IP 段）**而非憑證。瀏覽器路徑必須在住宅或行動網路
+    下執行（`scripts/run_local_shopee.ps1`）。
+
+    需要重新驗證時（例如蝦皮政策改變）可手動觸發該 workflow，它不寫入資料庫。
 - **搜尋策略**：
   - 關鍵字：`二手 MacBook` (不依賴 facet id)；可經 `SHOPEE_KEYWORDS` 以逗號擴充。
   - 存取控制：0 登入、隨機 User-Agent、隨機 Delay。
