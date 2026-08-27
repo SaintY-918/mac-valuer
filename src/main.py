@@ -3,7 +3,6 @@ import logging
 import json
 import os
 import re
-import time
 from collections import defaultdict
 
 import pandas as pd
@@ -177,7 +176,8 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
             continue
 
         db.save_deal(url, title, body, res_dict)
-        time.sleep(1)
+        # No sleep here: llm_parser throttles itself to GEMINI_RPM. A flat 1 s
+        # wait allowed up to 60 calls a minute against a 15 RPM free-tier cap.
 
     print("\n=== Step 3: Aggregating Final Data ===")
     all_parsed = db.get_all_parsed_deals()

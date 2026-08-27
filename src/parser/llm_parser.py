@@ -2,6 +2,8 @@ import logging
 import os
 import json
 import re
+import threading
+import time
 from typing import Optional
 from dotenv import load_dotenv
 from google import genai
@@ -17,6 +19,30 @@ load_dotenv()
 
 _model_id = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+# The free tier caps requests per minute, and the pipeline used to pace itself
+# with a flat 1 s sleep in main.py — up to 60 calls a minute against a limit of
+# 15. Throttling here rather than at the call site means no caller can forget.
+# Gemini 3.5/3.1 Flash Lite allow 15 RPM and 500 requests a day; the non-Lite
+# Flash models allow only 20 a day, so they are not a useful swap.
+# Default sits below the free tier's 15 RPM on purpose: pacing exactly at
+# the cap leaves no room for jitter or for the server counting a window
+# slightly differently, and a 429 costs far more time than the headroom.
+_RPM_LIMIT = max(1, int(os.getenv("GEMINI_RPM", "13")))
+_MIN_CALL_INTERVAL = 60.0 / _RPM_LIMIT
+_throttle_lock = threading.Lock()
+_last_call_at = 0.0
+
+
+def _throttle() -> None:
+    """Block until the next call would stay inside the per-minute budget."""
+    global _last_call_at
+    with _throttle_lock:
+        wait = _MIN_CALL_INTERVAL - (time.monotonic() - _last_call_at)
+        if wait > 0:
+            logger.debug("Throttling %.1fs to stay under %d RPM", wait, _RPM_LIMIT)
+            time.sleep(wait)
+        _last_call_at = time.monotonic()
 
 def preprocess_text(text: str) -> str:
     DQ = chr(34)
@@ -226,6 +252,7 @@ BODY:
         response = None
         for attempt in range(max_retries):
             try:
+                _throttle()
                 response = _client.models.generate_content(
                     model=_model_id,
                     contents=prompt,
@@ -235,9 +262,13 @@ BODY:
             except Exception as e:
                 err_str = str(e)
                 if attempt < max_retries - 1 and ("503" in err_str or "429" in err_str or "unavailable" in err_str.lower()):
-                    import time
-                    logger.info("Model busy, retrying in %ds... (Attempt %d/%d) %s", base_delay, attempt + 1, max_retries, err_str)
-                    time.sleep(base_delay)
+                    # A 429 here is the per-minute quota, so the wait has to
+                    # clear that window — 2 s then 4 s just retried into the
+                    # same rejection.
+                    delay = 65 if "429" in err_str else base_delay
+                    logger.info("Model busy, retrying in %ds... (Attempt %d/%d) %s",
+                                delay, attempt + 1, max_retries, err_str)
+                    time.sleep(delay)
                     base_delay *= 2
                 else:
                     raise e
