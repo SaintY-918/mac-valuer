@@ -81,7 +81,7 @@ def _get_db() -> DBManager:
 
 
 # ── Page config ────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="mac-valuer | 二手 MacBook 估價", page_icon=":material/laptop:", layout="wide")
+st.set_page_config(page_title="二手 MacBook 價值雷達", page_icon=":material/laptop:", layout="wide")
 
 st.markdown("""
 <style>
@@ -132,11 +132,12 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
 .st-eyebrow {
     font-family: var(--font-ui);
     font-weight: 600;
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    /* No uppercase: this line carries platform names, and "PTT MacShop" is not
+       "PTT MACSHOP". Small caps on a proper noun reads as shouting. */
     color: var(--accent);
-    margin-bottom: 4px;
+    margin-bottom: 5px;
 }
 
 /* ── Stat row ─────────────────────────────────────────────────────────────── */
@@ -551,7 +552,7 @@ try:
     # All available deals (unfiltered) for p75/p50 baseline
     all_available = db.get_filtered_deals(status="available")
 except Exception as exc:
-    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+    st.title("二手 MacBook 價值雷達")
     st.error(
         f"資料庫連線失敗：{exc}\n\n"
         "請確認 `DATABASE_URL` 環境變數已正確設定（本地開發於 `.env`；"
@@ -565,7 +566,7 @@ p75 = float(np.percentile(_all_scores, 75)) if _all_scores else 350.0
 p50 = float(np.percentile(_all_scores, 50)) if _all_scores else 250.0
 
 if not deals:
-    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+    st.title("二手 MacBook 價值雷達")
     st.warning("找不到符合條件的物件。請調整篩選條件後重試。")
     st.stop()
 
@@ -576,7 +577,7 @@ df["source"] = df["source"].fillna("")
 
 # Client-side source filter (both/none selected)
 if len(_selected_sources) == 0:
-    st.title(":material/laptop: 二手 MacBook 智慧估價系統")
+    st.title("二手 MacBook 價值雷達")
     st.warning("請至少選擇一個賣場來源（PTT 或 蝦皮）。")
     st.stop()
 
@@ -585,9 +586,11 @@ df["vfm_score"] = df.apply(lambda r: vfm_from_mapping(r.to_dict(), weights), axi
 df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 
 # ── Header ─────────────────────────────────────────────────────────────────────
-st.markdown('<div class="st-eyebrow">二手行情</div>',
+# The sources, derived rather than written out, so a fourth scraper cannot be
+# left off this line the way Carousell was left off the other two.
+st.markdown(f'<div class="st-eyebrow">{escape(" · ".join(SOURCE_LABELS[s] for s in SOURCES))} · 每日更新</div>',
             unsafe_allow_html=True)
-st.title("二手 MacBook 估價")
+st.title("二手 MacBook 價值雷達")
 prices = df["price"].dropna().astype(float)
 try:
     _new_count = _get_db().get_new_count()

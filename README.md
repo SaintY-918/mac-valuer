@@ -1,6 +1,6 @@
 # mac-valuer
 
-二手 MacBook 行情追蹤與估價系統。從三個平台自動蒐集販售資訊，用 LLM 解析規格，
+二手 MacBook 價值雷達。從三個平台自動蒐集販售資訊，用 LLM 解析規格，
 換算成可跨機型比較的性價比分數，找出市場上真正划算的機器。
 
 **線上版**：[mac-valuer.streamlit.app](https://mac-valuer.streamlit.app)
