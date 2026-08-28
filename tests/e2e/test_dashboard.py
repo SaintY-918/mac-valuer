@@ -114,6 +114,25 @@ def test_hiding_defects_removes_exactly_those_cards(fresh_page):
     assert not any(c["defect"] for c in after)
 
 
+def test_filtering_does_not_move_the_standard(fresh_page):
+    """The verdict bands come from every available listing, not the filtered
+    view. Narrowing to a handful of machines must not change what counts as a
+    good deal — that was the objection to percentile ranking in decisions #6,
+    and the caption says 全站 because of it.
+    """
+    caption = fresh_page.locator(".deal-caption").inner_text()
+    legend = fresh_page.locator(".vfm-legend").inner_text()
+
+    fresh_page.get_by_test_id("stSidebar").get_by_text("隱藏瑕疵品").click()
+    fresh_page.wait_for_function(
+        f"document.querySelectorAll('.deal').length === {len(LISTINGS) - len(DEFECT_URLS)}",
+        timeout=30_000,
+    )
+
+    assert fresh_page.locator(".deal-caption").inner_text() == caption
+    assert fresh_page.locator(".vfm-legend").inner_text() == legend
+
+
 @pytest.mark.parametrize("width,height", VIEWPORTS, ids=lambda v: str(v))
 def test_layout_never_scrolls_sideways(viewport, width, height):
     """A page that scrolls horizontally on a phone is unreadable, and nothing

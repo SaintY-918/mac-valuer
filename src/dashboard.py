@@ -608,11 +608,13 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── 分數色帶圖例 ─────────────────────────────────────────────────────────────
-# Squares in the verdict colours, not emoji. The thresholds are stated as what
-# they are — cut points within the listings currently shown — rather than as a
-# claim about the market, which this sample is too small to support.
+# Squares in the verdict colours, not emoji. The cut points come from every
+# available listing rather than from the filtered view, so narrowing to four
+# machines does not move the standard they are judged against. Stated on the
+# page because a band with an unexplained basis is a band nobody trusts.
 st.markdown(f"""
 <div class="vfm-legend">
+  <span style="color:var(--ink-soft);font-weight:500;">全站基準</span>
   <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--good);"></b><i>划算</i> ≥ {p75:.0f}</span>
   <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--mid);"></b><i>普通</i> ≥ {p50:.0f}</span>
   <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--low);"></b><i>偏貴</i> &lt; {p50:.0f}</span>
@@ -831,7 +833,11 @@ deals = [
 _caption = (
     '<div class="deal-caption">'
     '<span>CP 值 — 效能分 / 每千元</span>'
-    f'<span>中位數 {p50:.0f}</span>'
+    # "全站", not just "中位數": these come from every available listing, not
+    # from the rows currently shown. Filtering to four items must not move the
+    # standard a listing is judged against — that was the objection to
+    # percentile ranking in decisions.md #6, and the label has to say so.
+    f'<span>全站中位數 {p50:.0f}</span>'
     '</div>'
 )
 st.markdown(f'<div class="deal-list">{_caption}{"".join(deals)}</div>',

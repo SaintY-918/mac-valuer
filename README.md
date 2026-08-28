@@ -5,6 +5,10 @@
 
 **線上版**：[mac-valuer.streamlit.app](https://mac-valuer.streamlit.app)
 
+![Dashboard](docs/img/dashboard.png)
+
+<img src="docs/img/dashboard-mobile.png" width="320" alt="手機版">
+
 ---
 
 ## 這個專案在解決什麼
