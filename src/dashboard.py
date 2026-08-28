@@ -42,7 +42,7 @@ from src.calculator.score_engine import (
     vfm_from_mapping,
 )
 from src.database.db_manager import DBManager
-from src.parser.condition_flags import find_defects
+from src.parser.condition_flags import defects_for
 from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark
 
 # Scoring lives in src/calculator/score_engine — see the note there. The
@@ -505,9 +505,7 @@ try:
         deals = [d for d in deals if d.get("source") in _selected_sources]
 
     if hide_defects:
-        deals = [d for d in deals
-                 if not find_defects(d.get("original_title"), d.get("condition"),
-                                     d.get("body_content"))]
+        deals = [d for d in deals if not defects_for(d)]
 
     # ssd_gb filter: not in SQL, apply in Python
     if ssd_gb_filter:
@@ -730,7 +728,7 @@ def _render_deal(row: dict, is_top: bool) -> str:
     cta = f"前往{_CTA_LABELS.get(source, source or '賣場')}"
     badge = '<span class="badge">最划算</span>' if is_top else ""
     # A defect warning outranks "最划算": the top-scoring listing was a 瑕疵機.
-    if (defects := find_defects(title, row.get("condition"), row.get("body_content"))):
+    if (defects := defects_for(row)):
         badge = (f'<span class="badge badge--warn" title="{escape(" / ".join(defects), quote=True)}">'
                  f'瑕疵</span>') + badge
 

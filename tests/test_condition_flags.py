@@ -11,7 +11,7 @@ teaches the reader to ignore the badge, which costs more than a missed one.
 
 import pytest
 
-from src.parser.condition_flags import find_defects, has_defect
+from src.parser.condition_flags import defects_for, find_defects, has_defect
 
 
 @pytest.mark.parametrize("text", [
@@ -69,3 +69,30 @@ def test_reports_which_terms_matched():
     """The badge shows these on hover, so the reader can judge the call."""
     found = find_defects("C 級 | 螢幕右下邊框破裂")
     assert "破裂" in found and "C級" in found
+
+
+# ── defects_for: which of the two paths a row takes ───────────────────────────
+# The body is only available while the pipeline is running, so detection happens
+# there and the result is stored. Everything downstream reads the stored list.
+
+def test_defects_for_prefers_the_list_stored_at_parse_time():
+    """The stored list is authoritative: it is the only one that saw the body."""
+    row = {"original_title": "看起來很乾淨的標題", "defects": ["破裂"]}
+    assert defects_for(row) == ["破裂"]
+
+
+def test_defects_for_trusts_a_stored_empty_list():
+    """An empty list means 'checked, nothing found' — not 'go and look again'."""
+    row = {"original_title": "MacBook Air M2 瑕疵", "defects": []}
+    assert defects_for(row) == []
+
+
+def test_defects_for_falls_back_for_rows_parsed_before_the_change():
+    """Rows already in the database have no defects key and must still warn."""
+    row = {"original_title": "[販售] MacBook Pro 13 M1 電池膨脹 零件機"}
+    assert defects_for(row)
+
+
+def test_defects_for_accepts_either_title_key():
+    """get_filtered_deals renames title to original_title; both reach here."""
+    assert defects_for({"title": "螢幕破裂"}) == defects_for({"original_title": "螢幕破裂"})

@@ -47,6 +47,14 @@ VFM 公式獎勵低價，而**壞掉的機器正因為壞掉才便宜**，因此
 實測：分數最高的兩筆分別是「瑕疵機」與「外接機」（螢幕已壞），第一名還掛著「最划算」徽章。
 
 - 判定由 `src/parser/condition_flags.py` 負責，掃描標題、`condition` 與 `body_content`。
+- **判定必須在 pipeline 執行、結果存進 `parsed_json` 的 `defects` 欄位。**
+  `body_content` 只有在 `src/main.py` 存檔那一刻還在手上——`get_filtered_deals()` 與
+  `get_all_parsed_deals()` 都不回傳它（見 4.X.2 的展開清單規則）。曾經 Dashboard 與
+  Discord 都把 `body_content` 傳給 `find_defects()`，兩邊拿到的都是 `None`，
+  **只寫在內文的功能性故障對整個系統不存在**，而 PTT 賣家正是寫在內文。
+- 下游一律透過 `defects_for(row)` 取用：有 `defects` 欄位就用它，
+  沒有（改動前存入的舊資料）才退回只看標題與 `condition`。
+  空陣列代表「查過、沒有」，不得當成「沒查過」而重算。
 - **只標功能性瑕疵**：瑕疵機、破裂、無法開機／密合、泡水、電池膨脹、外接機、零件機、賣家分級 `C 級`。
 - **不標外觀使用痕跡**（輕微刮傷、凹痕、`B 級`）——二手機本來就有，標了會變成雜訊，
   讀者很快就會學會忽略這個徽章。

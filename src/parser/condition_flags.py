@@ -67,3 +67,20 @@ def find_defects(*parts) -> list[str]:
 
 def has_defect(*parts: str | None) -> bool:
     return bool(find_defects(*parts))
+
+
+def defects_for(row) -> list:
+    """Defects for a parsed row, preferring the list stored when it was parsed.
+
+    body_content is the only place a PTT seller usually describes a fault, and
+    the pipeline is the only point in the system that still holds it — neither
+    get_filtered_deals nor get_all_parsed_deals returns it. So the detection
+    runs once at parse time and travels with the spec.
+
+    Rows parsed before that fall back to title and condition, which is what the
+    whole system did until now.
+    """
+    stored = row.get("defects")
+    if isinstance(stored, list):
+        return stored
+    return find_defects(row.get("original_title") or row.get("title"), row.get("condition"))

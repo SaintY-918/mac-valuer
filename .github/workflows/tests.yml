@@ -42,4 +42,29 @@ jobs:
       # Gemini key or a database — that constraint is what keeps pure logic
       # separable from I/O.
       - name: Run tests
-        run: python -m pytest tests/ -q
+        run: python -m pytest tests/ -q --ignore=tests/e2e
+
+  # Separate job because it needs Streamlit, a browser binary and about a
+  # minute of setup. Keeping it out of the job above means a logic regression
+  # still reports in under two minutes.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pandas numpy plotly pydantic sqlalchemy python-dotenv                       requests streamlit playwright
+          python -m playwright install --with-deps chromium
+
+      # Seeds its own SQLite fixture and runs the real entrypoint against it,
+      # so this needs no secrets either.
+      - name: Run browser tests
+        run: python -m pytest tests/e2e -q

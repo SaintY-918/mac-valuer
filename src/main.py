@@ -12,7 +12,7 @@ from src.calculator.score_engine import get_vfm_score
 from src.database.db_manager import DBManager
 from src.models.mac_spec import MacBookSpec
 from src.notifier import send_alert, send_heartbeat
-from src.parser.condition_flags import find_defects
+from src.parser.condition_flags import defects_for, find_defects
 from src.parser.llm_parser import (
     extract_specs_from_text,
     infer_correct_year,
@@ -206,6 +206,11 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
             logger.info("Chip filter: discarding '%s' (chip=%s)", title[:40], chip)
             continue
 
+        # Detected here because this is the only place the body is still in
+        # hand. Every read path drops body_content, so a fault described only
+        # in the post body was invisible to both the alert and the dashboard.
+        res_dict["defects"] = find_defects(title, res_dict.get("condition"), body)
+
         db.save_deal(url, title, body, res_dict)
         # No sleep here: llm_parser throttles itself to GEMINI_RPM. A flat 1 s
         # wait allowed up to 60 calls a minute against a 15 RPM free-tier cap.
@@ -265,7 +270,7 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
                 "_raw_score": float(score),
                 # The alert calls a listing a bargain; if it is cheap because it
                 # is broken, that has to travel with it.
-                "_defects": find_defects(row["original_title"], row.get("condition")),
+                "_defects": defects_for(row),
             })
         except Exception as e:
             logger.warning("Scoring error for '%s': %s", row.get("original_title", "?")[:30], e)

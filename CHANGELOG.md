@@ -14,6 +14,8 @@
 - **ruff linter**（`ruff.toml`），規則經篩選，只保留能抓出 bug 的項目。
 - **文件一致性檢查**（`scripts/check_docs.py`），驗 env 變數、文件連結、spec 索引
   與評分常數，同時掛在 pytest 與 CI。
+- **瀏覽器測試**（`tests/e2e/`，19 項）：自建固定測試資料庫，用 Playwright 驗卡片分數、
+  瑕疵徽章、320／390／1440px 無橫向溢出、零 JS 錯誤。CI 獨立 job。
 - **旋轉拍賣（Carousell）成為第三個資料來源**。純 HTTP、無反爬牆、資料位於
   schema.org JSON-LD，因此可在 GitHub Actions 上執行，不依賴本機。
   僅使用對方 `robots.txt` 允許的入口（sitemap 與 `/p/` 商品頁）。
@@ -43,6 +45,9 @@
 - **晶片基準分改用實測 Geekbench 6 多核並標註來源**；M5 系列先前為外推值。
 
 ### 修正
+- **只寫在內文的功能性故障，整個系統看不到**。`find_defects()` 接受 `body_content`，
+  Dashboard 與 Discord 也都傳了，但沒有任何讀取路徑會回傳這個欄位，兩邊拿到的都是
+  `None`。PTT 賣家慣常把機況寫在內文。判定改到 pipeline 執行並存進 `parsed_json`。
 - **spec 宣稱 M5 為外推值**，實際已換成 Geekbench 6 實測；並移除「新增世代要同時
   改前後端兩處」的舊指示——兩處早已合併為單一 `CHIP_BENCHMARKS`。
 - **移除 `.env.example` 中無人讀取的 `API_HOST` / `API_PORT`**。

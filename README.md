@@ -146,9 +146,10 @@ src/
 每次 push 與 PR 自動跑三道，任一失敗即擋下（[`.github/workflows/tests.yml`](.github/workflows/tests.yml)）：
 
 ```bash
-ruff check .                  # linter，規則經篩選，見 ruff.toml
-python scripts/check_docs.py  # 文件與程式碼是否還說同一件事
-pytest tests/                 # 107 項
+ruff check .                          # linter，規則經篩選，見 ruff.toml
+python scripts/check_docs.py          # 文件與程式碼是否還說同一件事
+pytest tests/ --ignore=tests/e2e      # 111 項純邏輯，約 2 秒
+pytest tests/e2e                      # 19 項瀏覽器實測，約 20 秒
 ```
 
 **測試套件刻意不吃 API 金鑰、也不連資料庫。** 這條限制不是為了方便，是它逼著
@@ -158,6 +159,15 @@ pytest tests/                 # 107 項
 文件檢查驗四件事：env 變數兩邊對得上、Markdown 連結指得到檔案、CLAUDE.md 宣稱
 已寫的 spec 真的存在、以及 spec 裡引用的評分常數與 `score_engine.py` 一致。
 最後一項最要緊——讀者是照那張表判斷分數合不合理的。
+
+瀏覽器測試自己建一個固定的 SQLite 測試資料庫、用真正的進入點把 Streamlit 跑起來，
+再用 Playwright 驗**畫面上的東西**：卡片分數與 `score_engine` 算出來的一致、
+瑕疵徽章出現在該出現的地方、320／390／1440px 都不橫向捲動、零 JS 錯誤。
+同樣不需要金鑰。
+
+**為什麼要驗版面**：其餘所有測試都在測函式。分數算對了卻 render 進一個
+在手機上撐破畫面的元素，對使用者而言一樣是失敗，而專案裡沒有任何其他東西
+會發現這件事。
 
 ---
 
