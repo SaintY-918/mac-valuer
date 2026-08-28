@@ -98,17 +98,26 @@ Neon 預設給的是 `postgresql://`，本專案用 psycopg2，需改成 `postgr
 push `.github/workflows/scraper.yml` 後自動啟用。
 每天執行完 Discord 會收到 heartbeat——**某來源失敗時顯示 ⛔ 與原因，不會偽裝成「0 筆」**。
 
-**4. 本機蝦皮排程**
+**4. 本機排程**
 
-先手動登入建立 session：
+蝦皮與旋轉拍賣都擋資料中心 IP，GitHub runner 連不上（實測，見
+[`docs/decisions.md`](decisions.md)），所以這兩個來源跑在自己的機器上。
+
+先手動登入建立蝦皮 session：
 
 ```powershell
 $env:SHOPEE_HEADLESS="false"
 .\venv\Scripts\python.exe -m src.main --source shopee
 ```
 
-會開啟瀏覽器視窗，完成登入或驗證後回終端機按 Enter。
-接著依 [`scripts/run_local_shopee.ps1`](../scripts/run_local_shopee.ps1) 檔頭註解註冊 Windows 工作排程器。
+會開啟瀏覽器視窗，完成登入或驗證後回終端機按 Enter。接著註冊排程：
+
+```powershell
+.\scripts\install_schedule.ps1
+```
+
+不需要系統管理員權限，也不會儲存密碼。要改時間或來源就加參數重跑一次
+（`-At 03:00`、`-Sources "carousell,shopee"`），它會就地覆寫。
 
 `.env` 的 `DATABASE_URL` 必須指向 Neon，本機跑的結果才會進到雲端 Dashboard。
 
@@ -126,3 +135,41 @@ SAINTECH_URL = "https://channel.saintechtw.com/"   # 選用
 - **不支援自訂網域**（只能用 `你的app名.streamlit.app`，用 CNAME 指過去會因憑證不符而失敗）
 - **超過約 12 小時無人造訪會休眠**，下次開啟需等它重新啟動
 - **branch 在部署時固定**，設定頁只有 General／Sharing／Secrets，要換分支只能重新部署一個 app
+
+---
+
+## 換一台電腦
+
+repo 裡有的東西 `git clone` 就會回來。**不在 repo 裡的有四樣**——都是刻意的，
+它們要嘛是機密、要嘛是機器本身的狀態：
+
+| 要重建的 | 怎麼做 | 為什麼不在 repo |
+|---|---|---|
+| `venv` | `python -m venv venv`＋`venv\Scripts\pip install -r requirements.txt` | 平台相依，且體積大 |
+| `.env` | 複製 `.env.example` 後填值 | 含金鑰與資料庫連線字串 |
+| `shopee_state.json` | `SHOPEE_HEADLESS=false` 跑一次蝦皮並登入 | 是登入憑證，且會過期 |
+| Windows 工作排程 | `.\scripts\install_schedule.ps1` | 是作業系統的狀態，不是檔案 |
+
+完整順序：
+
+```powershell
+git clone https://github.com/SaintY-918/mac-valuer.git
+cd mac-valuer
+python -m venv venv
+.\venv\Scripts\pip install -r requirements.txt
+
+copy .env.example .env          # 然後填入 DATABASE_URL / GEMINI_API_KEY / DISCORD_WEBHOOK_URL
+
+$env:SHOPEE_HEADLESS="false"    # 開瀏覽器登入蝦皮一次
+.\venv\Scripts\python.exe -m src.main --source shopee
+
+.\scripts\install_schedule.ps1  # 註冊每日排程
+Start-ScheduledTask -TaskName "mac-valuer-shopee"   # 立刻驗證一次
+```
+
+**資料不用搬。** 資料庫在 Neon，Dashboard 在 Streamlit Cloud，兩者都跟這台機器無關；
+舊電腦的排程停掉（`.\scripts\install_schedule.ps1 -Uninstall`）就好。
+
+**排程設定不要用手改。** 它由 `install_schedule.ps1` 定義。設定曾經寫在
+`run_local_shopee.ps1` 的檔頭註解裡、要人照著重打，結果註解和實際註冊的內容就
+真的不一樣了——這種漂移不會有任何東西報錯。

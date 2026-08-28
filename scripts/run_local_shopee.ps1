@@ -1,31 +1,24 @@
-# Run the Shopee scraper from this machine and write into the cloud database.
+# Run the scrapers that cannot run on a GitHub runner, from this machine, and
+# write into the cloud database.
 #
-# Why this exists: GitHub Actions cannot scrape Shopee (datacenter IPs are
-# blocked, and the login session cannot follow an ephemeral runner). Running
-# from your own residential IP with the persisted shopee_state.json is the
-# fallback until the Affiliate Open API is approved and verified.
+# Why this exists: both Shopee and Carousell refuse datacenter IPs. For Shopee
+# the login session also cannot follow an ephemeral runner. Measured, not
+# assumed -- see docs/decisions.md and src/scripts/probe_carousell.py.
 #
-# Already registered as the scheduled task "mac-valuer-shopee" (daily 02:30).
-# To re-register it, or to change the time, run this as your own user:
+# Registered as a daily scheduled task by scripts/install_schedule.ps1. That
+# script is the definition; this one is what it runs. The registration used to
+# live in a comment block here that you were meant to retype by hand, and the
+# comment and the registered task had already drifted apart.
 #
-#   $repo = "C:\project\mac-valuer"
-#   $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-#               -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$repo\scripts\run_local_shopee.ps1`"" `
-#               -WorkingDirectory $repo
-#   $trigger = New-ScheduledTaskTrigger -Daily -At 2:30am
-#   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun `
-#               -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries `
-#               -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew
-#   Register-ScheduledTask -TaskName "mac-valuer-shopee" -Action $action -Trigger $trigger `
-#               -Settings $settings -Description "Scrape Shopee for mac-valuer and push to Neon" -Force
-#
-# -StartWhenAvailable makes a missed run (machine off/asleep) fire at the next
-# opportunity instead of being skipped; -WakeToRun lets it wake the machine.
-#
-# Useful commands:
-#   Start-ScheduledTask   -TaskName "mac-valuer-shopee"   # run it now
-#   Get-ScheduledTaskInfo -TaskName "mac-valuer-shopee"   # last/next run + result
-#   Unregister-ScheduledTask -TaskName "mac-valuer-shopee" -Confirm:$false
+#   .\scripts\install_schedule.ps1              # install or update the task
+#   Start-ScheduledTask -TaskName "mac-valuer-shopee"   # run it now
+
+param(
+    # Comma-separated, in the order they should run. Put the cheap reliable
+    # source first: the task is capped at one hour, and Shopee's browser path
+    # is the one that can hang.
+    [string]$Sources = "shopee"
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -41,18 +34,20 @@ function Write-Log($msg) {
     Add-Content -Path $LogFile -Value $line -Encoding utf8
 }
 
-Write-Log "=== run_local_shopee start ==="
+Write-Log "=== run_local_shopee start (sources: $Sources) ==="
 
 # The session must already exist. Without it a headless run raises
 # ShopeeSessionExpired, which now reaches Discord as an explicit failure.
 $StatePath = Join-Path $RepoRoot "shopee_state.json"
-if (-not (Test-Path $StatePath)) {
+if (($Sources -match "shopee") -and -not (Test-Path $StatePath)) {
     Write-Log "shopee_state.json missing - run 'SHOPEE_HEADLESS=false python -m src.main --source shopee' once to log in."
     exit 1
 }
 
-$StateAgeDays = ((Get-Date) - (Get-Item $StatePath).LastWriteTime).TotalDays
-Write-Log ("Session file is {0:N1} days old" -f $StateAgeDays)
+if (Test-Path $StatePath) {
+    $StateAgeDays = ((Get-Date) - (Get-Item $StatePath).LastWriteTime).TotalDays
+    Write-Log ("Session file is {0:N1} days old" -f $StateAgeDays)
+}
 
 $Python = Join-Path $RepoRoot "venv\Scripts\python.exe"
 if (-not (Test-Path $Python)) { $Python = "python" }
@@ -63,7 +58,7 @@ $env:SHOPEE_HEADLESS = "true"
 # written in the ANSI codepage and come back as mojibake.
 $env:PYTHONIOENCODING = "utf-8"
 
-Write-Log "Running: $Python -m src.main --source shopee"
+Write-Log "Running: $Python -u -m src.main --source $Sources"
 
 # Redirection is handed to cmd rather than done with `2>&1 | Tee-Object`.
 # Windows PowerShell 5.1 wraps a native command's stderr in NativeCommandError
@@ -73,7 +68,7 @@ Write-Log "Running: $Python -m src.main --source shopee"
 # exit code intact.
 $prevEAP = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& cmd /c "`"$Python`" -m src.main --source shopee >> `"$LogFile`" 2>&1"
+& cmd /c "`"$Python`" -u -m src.main --source $Sources >> `"$LogFile`" 2>&1"
 $code = $LASTEXITCODE
 $ErrorActionPreference = $prevEAP
 
