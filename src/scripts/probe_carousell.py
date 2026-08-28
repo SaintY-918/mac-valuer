@@ -74,6 +74,44 @@ VARIANTS = {
     "no headers at all": {},
 }
 
+# Measured 2026-08-28: every header variant 403s from a GitHub runner and every
+# one returns 200 from a home connection, so headers are settled. What is not
+# settled is scope — the probe only ever asked for one URL. If the block covers
+# /sitemaps/ but not the rest, the scraper can be restructured around that; if
+# it is domain-wide, Carousell cannot run here at all. These separate the two.
+PATHS = {
+    "sitemap (what fails)": TARGET,
+    "sitemap index": "https://tw.carousell.com/sitemap.xml",
+    "robots.txt": "https://tw.carousell.com/robots.txt",
+    "home page": "https://tw.carousell.com/",
+    # A real listing. If product pages are reachable, the scraper could source
+    # its URL list elsewhere and still read Carousell from CI.
+    "product page": ("https://tw.carousell.com/p/"
+                     "macbook-air-m2-15%E5%90%8B-8g-256g-1457068258/"),
+}
+
+
+def probe_paths() -> None:
+    """Is the whole domain closed to this caller, or only the sitemap path?"""
+    print("--- by path, using the scraper's own headers ---")
+    headers = VARIANTS["current scraper"]
+    codes = {}
+    for name, url in PATHS.items():
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+            codes[name] = r.status_code
+            note = f"{len(r.content):,} bytes" if r.ok else r.reason
+            print(f"  {name:<22} {r.status_code}  {note}")
+        except Exception as e:
+            codes[name] = None
+            print(f"  {name:<22} ---  {type(e).__name__}: {e}")
+        time.sleep(3)
+
+    reachable = [n for n, c in codes.items() if c == 200]
+    print()
+    print("the whole domain is closed to this caller." if not reachable
+          else "reachable from here: " + ", ".join(reachable))
+
 
 def main() -> int:
     print(f"target: {TARGET}\n")
@@ -99,6 +137,9 @@ def main() -> int:
         print("everything got through: this connection is not being blocked at all.")
     else:
         print("headers matter here. what passed: " + ", ".join(ok))
+    print()
+
+    probe_paths()
     # Always exits 0 — a 403 is the measurement, not a failure of the probe.
     return 0
 
