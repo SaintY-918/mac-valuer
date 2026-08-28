@@ -1,0 +1,27 @@
+name: Carousell probe
+
+# Manual only. Answers one question: does Carousell reject this runner because
+# of its IP, or because of the headers the scraper sends? Those need opposite
+# fixes and there is no way to tell them apart from a home connection.
+#
+# Read-only GETs of a published sitemap, five of them, three seconds apart.
+# No secrets, no login, nothing it can spoil by running.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Probe Carousell from this runner
+        run: python -m src.scripts.probe_carousell

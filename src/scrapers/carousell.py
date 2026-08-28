@@ -1,9 +1,16 @@
 """Carousell (旋轉拍賣) scraper.
 
 Plain HTTP, no browser: category and product pages are server-rendered and every
-field we need sits in a schema.org JSON-LD block. That means this scraper runs
-unchanged on a GitHub runner — unlike the Shopee browser path, which Shopee
-classifies as a crawler and blocks from datacenter IPs.
+field we need sits in a schema.org JSON-LD block.
+
+This file used to claim that made it safe on a GitHub runner, unlike the Shopee
+browser path. That was wrong. On 2026-08-28 the scheduled run failed with a 403
+on the sitemap itself while the same request from a residential IP returned 200
+— so Carousell filters on something about the caller, not on how the page is
+rendered. Not needing a browser is not the same as not being blocked.
+
+See src/scripts/probe_carousell.py for what is being measured, and
+docs/decisions.md for where that landed.
 
 robots.txt compliance (checked 2026-08-27):
   Disallow: /search/   -> never used
