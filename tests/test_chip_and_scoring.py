@@ -8,6 +8,7 @@ machine differently on the page and in the alert.
 import pytest
 
 from src.calculator.score_engine import (
+    FAMILY_INCHES,
     FORM_INCHES,
     ScoringWeights,
     adjusted_score,
@@ -299,3 +300,24 @@ def test_the_displayed_size_agrees_with_the_scored_form_factor():
     for series, raw in [("Air", 13.6), ("Air", 15.3), ("Pro 14/16", 14.2), ("Pro 14/16", 16.2)]:
         key = form_factor_key(series, raw)
         assert FORM_INCHES[key] == nominal_inches(series, raw)
+
+
+def test_every_family_offers_only_sizes_it_is_sold_in():
+    """Apple has never made a 15" Pro or a 14" Air. Offering the combination
+    returns an empty list, which reads as missing stock rather than an
+    impossible request."""
+    assert 15 not in FAMILY_INCHES["Pro"]
+    assert 14 not in FAMILY_INCHES["Air"]
+    assert 16 not in FAMILY_INCHES["Air"]
+    assert FAMILY_INCHES["Neo"] == (13,)
+
+
+def test_the_offered_sizes_are_ones_the_scorer_recognises():
+    """A size in the filter that form_factor_key maps elsewhere would let
+    someone select a combination the scoring cannot represent."""
+    for family, sizes in FAMILY_INCHES.items():
+        series = {"Air": "Air", "Pro": "Pro 14/16", "Neo": "Neo"}[family]
+        for inches in sizes:
+            # Pro 13 is its own series value; check via the family's own bucket.
+            key = form_factor_key(series if inches > 13 else f"{family} 13", inches)
+            assert FORM_INCHES[key] == inches, (family, inches, key)

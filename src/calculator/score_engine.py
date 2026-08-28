@@ -101,6 +101,16 @@ def form_factor_key(series: Any, screen_size: Any) -> str:
 FORM_INCHES = {"air13": 13, "air15": 15, "pro13": 13, "pro14": 14, "pro16": 16}
 
 
+# Which sizes each family is actually sold in. Apple has never made a 15" Pro
+# or a 14" Air, and offering those combinations in the filters produced an
+# empty list that looks like missing data rather than an impossible request.
+FAMILY_INCHES = {
+    "Air": (13, 15),
+    "Pro": (13, 14, 16),
+    "Neo": (13,),
+}
+
+
 def nominal_inches(series: Any, screen_size: Any) -> int | None:
     """Apple's marketing size for a listing, or None when nothing was parsed.
 

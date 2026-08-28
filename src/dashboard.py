@@ -33,6 +33,7 @@ if _db_url:
     os.environ["DATABASE_URL"] = _db_url
 
 from src.calculator.score_engine import (
+    FAMILY_INCHES,
     RAM_BONUS_THRESHOLD_GB,
     SSD_BONUS_THRESHOLD_GB,
     ScoringWeights,
@@ -442,9 +443,18 @@ with st.sidebar:
         format_func=lambda x: "不限" if x is None else (f"{x} GB" if x < 1000 else f"{x // 1024} TB"),
         key="ssd_gb_filter",
     )
+    # Offered sizes follow the chosen family: there is no 15" Pro and no 14"
+    # Air, and letting someone pick one returned an empty list that reads as
+    # "no stock" rather than "that machine does not exist".
+    _sizes = FAMILY_INCHES.get(model_type) if model_type else sorted(
+        {i for group in FAMILY_INCHES.values() for i in group})
+    # Switching family can strip the size already chosen; drop it rather than
+    # letting Streamlit fail on a value that is no longer an option.
+    if st.session_state.get("screen_size") not in (None, *_sizes):
+        st.session_state["screen_size"] = None
     screen_size_filter = st.selectbox(
         "螢幕尺寸",
-        [None, 13, 14, 15, 16],
+        [None, *_sizes],
         format_func=lambda x: "不限" if x is None else f"{x} 吋",
         key="screen_size",
     )
