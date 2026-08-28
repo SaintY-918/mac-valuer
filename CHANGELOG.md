@@ -8,6 +8,8 @@
 ## [未發布]
 
 ### 新增
+- **`src/scripts/revalidate_chips.py`**：以現行規則重新檢驗已存的晶片，
+  清掉不再通過的（例如被誤判為 Apple M5 的 2016 年 Intel 機）。
 - **`scripts/install_schedule.ps1`**：本機排程改由腳本定義而非檔頭註解。
   可重複執行、不需管理員權限、不儲存密碼，並在註冊前檢查 venv／`.env`／蝦皮 session。
 - **`docs/setup.md` 換電腦章節**：列出四樣不在 repo 裡的東西與重建方式。
@@ -37,6 +39,9 @@
 - 規格文件：`scraper`、`api`、`llm-parser`、`score-engine`。
 
 ### 變更
+- **列表改版**：卡片改為髮絲線分隔的資料列；**機型當大字、賣家原標題退為副標**；
+  分數單位標在清單上方一次並附中位數；淺色主題；字體改用 Inter，數字不再使用等寬字。
+- **配色與字體不再綁 SainTech 品牌**——那組藍與 Archivo 900 是從別的專案沿用的。
 - **旋轉拍賣改在本機執行**，CI 只跑 PTT。Carousell 對 GitHub runner 的每個請求都是 403
   （五種標頭 × 五個路徑，僅 `robots.txt` 通過），留在 CI 只會每晚發一則假失敗。
 - `run_local_shopee.ps1` → `run_local_scrape.ps1`，來源改由 `-Sources` 參數決定；

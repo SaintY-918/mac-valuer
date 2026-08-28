@@ -30,6 +30,7 @@ def _cards(page) -> list[dict]:
     """Read every rendered card back out of the DOM."""
     return page.eval_on_selector_all(".deal", """els => els.map(e => ({
         href: e.getAttribute('href'),
+        model: e.querySelector('.deal__model')?.textContent ?? '',
         title: e.querySelector('.deal__title')?.textContent ?? '',
         score: e.querySelector('.deal__box span')?.textContent ?? '',
         price: e.querySelector('.deal__price b')?.textContent ?? '',
@@ -83,6 +84,18 @@ def test_defects_are_flagged_wherever_they_are_described(page, row):
     assert card["defect"], f"no defect badge on the listing whose defect is in the {row['defect']}"
 
 
+def test_the_model_is_the_headline_not_the_seller_title(page):
+    """Seller titles bury the model in shop names and coupon slogans, so the
+    line the reader scans is the one the pipeline derived."""
+    by_url = {row["url"]: row for row in LISTINGS}
+    for card in _cards(page):
+        spec = by_url[card["href"]]["spec"]
+        assert "MacBook" in card["model"]
+        assert spec["chip"] in card["model"], card
+        # The seller's own wording stays, as the way to check the line above.
+        assert card["title"], "the raw title should still be present"
+
+
 def test_clean_listings_are_not_flagged(page):
     """A badge on every card is the same as a badge on none."""
     flagged = {c["href"] for c in _cards(page) if c["defect"]}
@@ -129,7 +142,7 @@ def test_card_text_stays_inside_its_card(viewport, width, height):
     page = viewport(width, height)
     spills = page.eval_on_selector_all(".deal", """els => els.flatMap(card => {
         const outer = card.getBoundingClientRect();
-        return [...card.querySelectorAll('.deal__title, .deal__price b, .deal__box span')]
+        return [...card.querySelectorAll('.deal__model, .deal__title, .deal__price b, .deal__box span')]
             .filter(el => el.getBoundingClientRect().right > outer.right + 1)
             .map(el => el.className + ': ' + el.textContent.slice(0, 30));
     })""")

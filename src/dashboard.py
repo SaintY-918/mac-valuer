@@ -83,284 +83,278 @@ st.set_page_config(page_title="mac-valuer | 二手 MacBook 估價", page_icon=":
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
-
-/* ── SainTech Design System tokens ──────────────────────────────────────────
-   Values lifted verbatim from the design system project (tokens/colors.css,
-   typography.css, layout.css) — do not round or re-pick them here. The brand
-   rule that shapes this page: mono is for specs, prices and model numbers;
-   Archivo 900 carries display weight; borders beat shadows, and on dark
-   surfaces glow beats grey shadow. */
+/* ── Tokens ─────────────────────────────────────────────────────────────────
+   Unbranded. This page used to carry the SainTech blue and Archivo 900, which
+   were inherited from another project rather than chosen for a list of prices.
+   Colours and fonts that Streamlit's own widgets need live in
+   .streamlit/config.toml; only what the theme cannot express is below. */
 :root {
-    --blue-500: #1F48FF;   /* core brand */
-    --blue-600: #1539DB;
-    --cyan-500: #15E0FF;   /* new / live / highlight */
+    --ground:    #F5F6F8;   /* cool off-white, never cream */
+    --surface:   #FFFFFF;
+    --line:      #E4E7EC;
+    --line-soft: #EDEFF2;
 
-    --ink-900: #0A0E1A;
-    --ink-800: #11162A;
-    --ink-700: #1B2238;
-    --ink-600: #2B3450;
-    --ink-400: #6B768F;
-    --ink-200: #C7CCD8;
+    --ink:       #111418;   /* near-black, biased blue rather than neutral */
+    --ink-soft:  #5B6470;
+    --ink-faint: #8E97A2;
 
-    --success: #16C76A;
-    --warning: #FFB020;
-    --danger:  #FF3B47;
+    --accent:    #1A6ACF;
 
-    --font-display: "Archivo", "Noto Sans TC", system-ui, sans-serif;
-    --font-body:    "Noto Sans TC", "Archivo", system-ui, sans-serif;
-    --font-mono:    "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+    /* The verdict bands, and the page's only saturated colour. Muted on
+       purpose: a row carries a score, a price and sometimes a defect flag,
+       and three loud colours would leave none of them dominant. */
+    --good: #2E7D5B;
+    --mid:  #A8761F;
+    --low:  #9E4F55;
 
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 16px;
-    --radius-pill: 999px;
+    --font-ui: "Inter", "Noto Sans TC", system-ui, -apple-system, sans-serif;
 
-    --glow-brand: 0 0 0 1px rgba(31, 72, 255, 0.5), 0 8px 28px rgba(31, 72, 255, 0.35);
+    --radius: 8px;
     --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
     --dur-fast: 120ms;
 }
 
-/* ── Streamlit chrome ───────────────────────────────────────────────────────
-   Colours, fonts and radii come from .streamlit/config.toml, not from here —
-   overriding them with CSS loses to Streamlit's own selectors and leaves the
-   widgets on the light theme. Only what the theme cannot express lives below. */
-/* Streamlit paints headings in textColor; the brand puts them on --text-strong.
-   There is no theme option for heading colour, so this is the one place a
-   selector is still needed — scoped tightly enough to beat Streamlit's own. */
-[data-testid="stHeading"] h1, [data-testid="stHeading"] h2 { color: #FFFFFF; }
+/* Figures line up in columns throughout — prices down the right edge, scores
+   down the left. Inter's tabular set does what a monospaced face was doing
+   before, without switching typeface mid-page. */
+.deal, .stat, .deal-caption { font-variant-numeric: tabular-nums; }
 
 h1 {
-    /* Break at spaces (after "MacBook" on mobile), never mid-CJK-word. */
-    word-break: keep-all;
+    word-break: keep-all;      /* break at spaces, never mid-CJK-word */
     overflow-wrap: normal;
-    line-height: 1.04;
-    letter-spacing: -0.02em;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
 }
 h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important; }
 
-/* The logo's S carries a motion dot-trail; as a band it becomes the page's
-   masthead rule (base.css .st-speed-stripes). */
-.st-stripe {
-    height: 5px;
-    border-radius: 2px;
-    margin: 0 0 14px;
-    background-image: repeating-linear-gradient(-60deg, var(--blue-500) 0 14px, var(--blue-600) 14px 28px);
-}
-
 .st-eyebrow {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 12px;
-    letter-spacing: 0.12em;
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--cyan-500);
-    margin-bottom: 2px;
+    color: var(--accent);
+    margin-bottom: 4px;
 }
 
 /* ── Stat row ─────────────────────────────────────────────────────────────── */
-.stat-row { display: flex; flex-wrap: nowrap; gap: 8px; margin: 10px 0 12px; }
+.stat-row { display: flex; flex-wrap: nowrap; gap: 8px; margin: 12px 0 14px; }
 .stat {
     flex: 1 1 0;
     min-width: 0;
-    padding: 9px 14px;
-    background: var(--ink-800);
-    border: 1px solid var(--ink-700);
-    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
 }
 .stat--wide { flex: 1.9 1 0; }
 .stat span {
     display: block;
-    font-family: var(--font-display);
-    font-weight: 700;
     font-size: 11px;
-    letter-spacing: 0.12em;
+    font-weight: 500;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--ink-400);
-    margin-bottom: 2px;
+    color: var(--ink-faint);
+    margin-bottom: 3px;
     white-space: nowrap;
 }
 .stat b {
-    font-family: var(--font-mono);
-    font-weight: 700;
-    font-size: 22px;
-    color: #FFFFFF;
+    font-weight: 600;
+    font-size: 21px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
     white-space: nowrap;
-    line-height: 1.1;
+    line-height: 1.15;
 }
-.stat--new b { color: var(--cyan-500); }
+.stat--new b { color: var(--accent); }
 
 .vfm-legend {
     display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
-    padding: 2px 0 10px;
-    font-family: var(--font-mono);
+    padding: 2px 0 12px;
     font-size: 12px;
-    color: var(--ink-400);
+    color: var(--ink-faint);
 }
 .vfm-legend i { font-style: normal; }
 .vfm-legend b { width: 8px; height: 8px; border-radius: 2px; display: block; }
 
-/* ── Deal rows ────────────────────────────────────────────────────────────
-   One item per row rather than a multi-column grid: each row carries only
-   score, title, specs and price, so it stays scannable at full width. */
-.deal-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 18px; }
+/* ── Result rows ────────────────────────────────────────────────────────────
+   Hairline-separated rows rather than cards, the way a flight or price search
+   presents results: the eye runs down one column of prices and nothing boxes
+   each listing off from its neighbours. The previous card grid put every
+   field at the same weight, so nothing told the reader where to look. */
+.deal-list {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 0 0 18px;
+}
+
+/* Says what the number is, once, instead of repeating a unit on all twenty
+   rows — and gives the median somewhere to sit. A score means nothing on its
+   own; knowing the middle of the set is what makes 750 read as high. */
+.deal-caption {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 11px 18px;
+    background: #FBFCFD;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+}
 
 .deal {
-    display: flex;
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+    gap: 18px;
     align-items: center;
-    gap: 20px;
-    padding: 16px 20px;
-    background: var(--ink-800);
-    border: 1px solid var(--ink-700);
-    border-radius: var(--radius-lg);
+    padding: 15px 18px;
+    border-bottom: 1px solid var(--line-soft);
     text-decoration: none !important;
-    color: var(--ink-200) !important;
-    transition: transform var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out);
+    color: var(--ink) !important;
+    transition: background var(--dur-fast) var(--ease-out);
 }
-/* Brand motion rule: quick, mechanical, no overshoot. */
-.deal:hover { transform: translateY(-3px); filter: brightness(1.08); }
-@media (hover: none) { .deal:hover { transform: none; filter: none; } }
+.deal:last-child { border-bottom: 0; }
+.deal:hover { background: #FAFBFC; }
+.deal:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* Rank 1 on page 1 answers the question the product exists to ask. */
-.deal--top { border: 2px solid var(--blue-500); box-shadow: var(--glow-brand); }
-
-/* ScorePill anatomy, minus the /max — VFM has no fixed ceiling. */
-.deal__score { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
-.deal__box {
-    width: 68px; height: 68px;
-    border-radius: var(--radius-md);
-    background: var(--ink-900);
-    border: 3px solid var(--tone);
-    box-shadow: 0 0 18px var(--tone-glow);
-    display: flex; align-items: center; justify-content: center;
-}
-.deal__box span { font-family: var(--font-display); font-weight: 900; font-size: 26px; color: #FFFFFF; line-height: 1; }
-.deal__scorelabel {
-    font-family: var(--font-display);
-    font-weight: 700; font-size: 10px;
-    letter-spacing: 0.1em; text-transform: uppercase;
+.deal__score { text-align: center; }
+.deal__box span {
+    display: block;
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
     color: var(--tone);
 }
+.deal__scorelabel {
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+}
 
-.deal__body { display: flex; flex-direction: column; gap: 8px; flex-grow: 1; min-width: 0; }
-.deal__titlerow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.deal__body { min-width: 0; }
+
+/* What the listing is, as the system understands it — not how it was
+   advertised. Seller titles carry shop names, coupon slogans and stock codes,
+   and the model is buried somewhere inside. */
+.deal__model {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.35;
+}
+/* The seller's own words, kept but demoted: it is the only way to check the
+   line above, and the only place a detail nobody parsed can still show up. */
 .deal__title {
-    font-family: var(--font-body);
-    font-weight: 700; font-size: 16px;
-    color: #FFFFFF;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.badge {
-    flex-shrink: 0;
-    display: inline-flex; align-items: center;
-    font-family: var(--font-display);
-    font-weight: 800; font-size: 11px;
-    letter-spacing: 0.06em; text-transform: uppercase;
-    padding: 4px 9px; border-radius: 4px; line-height: 1;
-    background: var(--blue-500); color: #FFFFFF;
-}
-
-/* Sits beside the "最划算" badge. Danger red, because the VFM formula rewards
-   a broken machine for being cheap and the score alone reads as a bargain. */
-.badge--warn { background: var(--danger); }
-
-.deal__chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.deal__chips i {
-    font-style: normal;
-    display: inline-flex; align-items: center;
-    font-family: var(--font-mono);
-    font-weight: 500; font-size: 13px; letter-spacing: 0.01em;
-    padding: 6px 12px;
-    border-radius: var(--radius-pill);
-    background: var(--ink-700);
-    color: var(--ink-200);
-    border: 1px solid var(--ink-600);
-}
-.deal__chips i.warn { color: var(--warning); }
-
-.deal__buy { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0; }
-.deal__price { display: flex; align-items: baseline; gap: 4px; }
-.deal__price s { font-family: var(--font-mono); font-weight: 500; font-size: 13px; color: var(--ink-400); text-decoration: none; }
-.deal__price b { font-family: var(--font-mono); font-weight: 700; font-size: 27px; color: #FFFFFF; line-height: 1; }
-.deal__cta {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-height: 44px;
-    font-family: var(--font-display);
-    font-weight: 800; font-size: 15px; letter-spacing: 0.01em;
-    padding: 11px 20px;
-    border-radius: var(--radius-md);
-    background: transparent; color: #FFFFFF;
-    border: 2px solid var(--ink-600);
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
-.deal--top .deal__cta { background: var(--blue-500); border-color: var(--blue-500); }
-
-/* ── Footer ───────────────────────────────────────────────────────────────── */
-.st-footer {
-    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-    gap: 12px;
-    margin-top: 22px; padding-top: 14px;
-    border-top: 1px solid var(--ink-700);
-    font-family: var(--font-mono); font-size: 12px; color: var(--ink-400);
+.deal__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 5px;
+    font-size: 11.5px;
+    color: var(--ink-soft);
 }
-.st-footer a {
-    display: inline-flex; align-items: center; gap: 7px;
-    font-family: var(--font-display); font-weight: 700; font-size: 12px;
-    letter-spacing: 0.06em;
-    color: var(--ink-200) !important;
-    text-decoration: none !important;
-    transition: color var(--dur-fast) var(--ease-out);
+.deal__chips i { font-style: normal; }
+.deal__chips i.warn { color: var(--low); font-weight: 500; }
+
+.deal__buy { text-align: right; }
+.deal__price {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    white-space: nowrap;
 }
-.st-footer a:hover { color: var(--cyan-500) !important; }
-.st-footer a svg { flex-shrink: 0; }
+.deal__price s { text-decoration: none; font-size: 11px; font-weight: 400; color: var(--ink-faint); margin-right: 3px; }
+.deal__cta {
+    font-size: 10px;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-top: 2px;
+}
 
-/* ── Below 700px the row folds into a stack ───────────────────────────────── */
-@media (max-width: 700px) {
-    h1 { font-size: 1.5rem !important; }
-    .st-eyebrow { font-size: 10px; }
-    .stat { padding: 7px 10px; }
-    .stat span { font-size: 9px; letter-spacing: 0.1em; }
-    .stat b { font-size: 15px; }
-    .stat--wide b { font-size: 12.5px; }
-    .vfm-legend { gap: 10px; font-size: 11px; }
-    .block-container { padding-top: 2.2rem !important; }
+.badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--good);
+    border: 1px solid rgba(46, 125, 91, 0.35);
+    background: rgba(46, 125, 91, 0.07);
+    padding: 0 5px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: 1px;
+}
+/* Sits before "最划算". The formula rewards a low price, and a broken machine
+   is cheap because it is broken — so the warning has to outrank the praise. */
+.badge--warn {
+    color: var(--low);
+    border-color: rgba(158, 79, 85, 0.35);
+    background: rgba(158, 79, 85, 0.07);
+}
 
-    /* Grid areas rather than a column flex: the chips live inside .deal__body in
-       the DOM, but on a phone they need the full card width instead of the
-       narrow column beside the score. Dissolving .deal__body with
-       `display: contents` promotes its children to grid items so they can be
-       placed independently — no duplicate markup for the two layouts. */
+@media (max-width: 640px) {
     .deal {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
-        grid-template-areas:
-            "score title"
-            "chips chips"
-            "buy   buy";
-        align-items: start;
-        gap: 10px 12px;
-        padding: 14px;
+        grid-template-columns: 48px minmax(0, 1fr);
+        row-gap: 8px;
+        padding: 13px 14px;
     }
-    .deal__body { display: contents; }
-    .deal__score { grid-area: score; }
-    .deal__titlerow { grid-area: title; }
-    .deal__chips { grid-area: chips; }
-    .deal__buy { grid-area: buy; }
-
-    .deal__box { width: 60px; height: 60px; }
-    .deal__box span { font-size: 23px; }
-    .deal__title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 14px; line-height: 1.45; }
-    .deal__titlerow { flex-wrap: wrap; }
-    .deal__chips i { font-size: 11.5px; padding: 5px 10px; }
+    /* Price moves under the model rather than off the edge; it stays the
+       heaviest thing in the row either way. */
     .deal__buy {
-        flex-direction: row; align-items: center; justify-content: space-between;
-        padding-top: 10px; border-top: 1px solid var(--ink-700);
+        grid-column: 2;
+        text-align: left;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
     }
-    .deal__price b { font-size: 24px; }
-    .deal__cta { font-size: 14px; }
+    .deal__cta { margin-top: 0; }
+    .deal-caption { padding: 9px 14px; font-size: 9.5px; }
+    /* The first listing has to be visible without scrolling — the whole
+       complaint that started this redesign was that the phone view was
+       unreadable, and a masthead that fills the screen is the same problem in
+       a nicer typeface. Heading capped, stats two-up, price range last
+       because it is the only one whose digits cannot fit half a 320px row. */
+    h1 { font-size: clamp(26px, 7vw, 34px) !important; }
+    .stat-row { flex-wrap: wrap; gap: 6px; }
+    .stat { flex: 1 1 calc(50% - 3px); padding: 8px 12px; }
+    .stat b { font-size: 18px; }
+    .stat--wide { order: 3; flex: 1 1 100%; }
+    .vfm-legend { gap: 10px; font-size: 11px; padding-bottom: 10px; }
 }
 
-/* Keep pagination row horizontal on all screen sizes */
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+.st-footer {
+    margin-top: 40px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--ink-faint);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    align-items: center;
+}
+.st-footer a { color: var(--accent); text-decoration: none; }
+.st-footer a:hover { text-decoration: underline; }
+
+/* Keep the pagination row horizontal at every width. */
 [data-testid="stHorizontalBlock"] {
     flex-wrap: nowrap !important;
     gap: 0.5rem;
@@ -548,7 +542,7 @@ df["vfm_score"] = df.apply(lambda r: vfm_from_mapping(r.to_dict(), weights), axi
 df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 
 # ── Header ─────────────────────────────────────────────────────────────────────
-st.markdown('<div class="st-stripe"></div><div class="st-eyebrow">SainTech · 二手行情</div>',
+st.markdown('<div class="st-eyebrow">二手行情</div>',
             unsafe_allow_html=True)
 st.title("二手 MacBook 估價")
 prices = df["price"].dropna().astype(float)
@@ -567,13 +561,15 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── 性價比圖例 ───────────────────────────────────────────────────────────────
-# Squares in the semantic colours, not emoji — the brand does not use emoji.
-st.markdown("""
+# ── 分數色帶圖例 ─────────────────────────────────────────────────────────────
+# Squares in the verdict colours, not emoji. The thresholds are stated as what
+# they are — cut points within the listings currently shown — rather than as a
+# claim about the market, which this sample is too small to support.
+st.markdown(f"""
 <div class="vfm-legend">
-  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--success);"></b><i>優秀</i> 前 25%</span>
-  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--warning);"></b><i>普通</i> 前 50%</span>
-  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--danger);"></b><i>偏貴</i> 後 50%</span>
+  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--good);"></b><i>划算</i> ≥ {p75:.0f}</span>
+  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--mid);"></b><i>普通</i> ≥ {p50:.0f}</span>
+  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--low);"></b><i>偏貴</i> &lt; {p50:.0f}</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -674,10 +670,32 @@ def _tier(score: float) -> tuple[str, str]:
     The glow is the same hue at 33% alpha, matching ScorePill's `${tone}55`.
     """
     if score >= p75:
-        return "var(--success)", "#16C76A55"
+        return "var(--good)", "#2E7D5B"
     if score >= p50:
-        return "var(--warning)", "#FFB02055"
-    return "var(--danger)", "#FF3B4755"
+        return "var(--mid)", "#A8761F"
+    return "var(--low)", "#9E4F55"
+
+
+def _model_label(row: dict) -> str:
+    """What the listing is, as the pipeline understands it.
+
+    Seller titles bury the model inside shop names, coupon slogans and stock
+    codes — 『澄橘』Macbook Air 15 2025 M4 10C10G/16G/256G 午夜 瑕疵機《二手》A87078
+    is one real example. This is the line the reader scans; the seller's own
+    wording stays underneath as the way to check it.
+
+    Every part is optional, because any of them can be missing from a parse,
+    and a label reading "MacBook · None" would be worse than a short one.
+    """
+    series = str(row.get("series") or "").lower()
+    family = "Air" if "air" in series else "Pro" if "pro" in series else ""
+
+    parts = [" ".join(p for p in ("MacBook", family) if p)]
+    if (screen := _nan_safe(row.get("screen_size"), 0)):
+        parts[0] += f' {float(screen):g}"'
+    if (chip := str(row.get("chip") or "").strip()) and chip.lower() != "none":
+        parts.append(chip)
+    return " · ".join(parts)
 
 
 def _int_or_none(val):
@@ -738,10 +756,10 @@ def _render_deal(row: dict, is_top: bool) -> str:
         f' style="--tone:{tone};--tone-glow:{glow}">'
         f'<div class="deal__score">'
         f'<div class="deal__box"><span>{score:.0f}</span></div>'
-        f'<div class="deal__scorelabel">CP 值</div>'
         f'</div>'
         f'<div class="deal__body">'
-        f'<div class="deal__titlerow">{badge}<div class="deal__title">{escape(title)}</div></div>'
+        f'<div class="deal__model">{badge}{escape(_model_label(row))}</div>'
+        f'<div class="deal__title">{escape(title)}</div>'
         f'<div class="deal__chips">{"".join(chips)}</div>'
         f'</div>'
         f'<div class="deal__buy">'
@@ -759,7 +777,17 @@ deals = [
     _render_deal(r.to_dict(), is_top=(current_page == 1 and i == 0))
     for i, (_, r) in enumerate(paginated.iterrows())
 ]
-st.markdown(f'<div class="deal-list">{"".join(deals)}</div>', unsafe_allow_html=True)
+# The unit is stated once here instead of on every row, and the median gives
+# the number a reference point: 750 means nothing until you know the middle of
+# the set is 626.
+_caption = (
+    '<div class="deal-caption">'
+    '<span>CP 值 — 效能分 / 每千元</span>'
+    f'<span>中位數 {p50:.0f}</span>'
+    '</div>'
+)
+st.markdown(f'<div class="deal-list">{_caption}{"".join(deals)}</div>',
+            unsafe_allow_html=True)
 
 # ── Pagination ─────────────────────────────────────────────────────────────────
 st.markdown("")
@@ -786,8 +814,8 @@ with next_col:
         st.session_state["page_num"] = current_page + 1
         st.rerun()
 st.markdown(
-    f"<div style='text-align:center;padding:4px 0;color:var(--ink-400);"
-    f"font-family:var(--font-mono);font-size:12px;'>共 {len(df)} 筆</div>",
+    f"<div style='text-align:center;padding:4px 0;color:var(--ink-faint);"
+    f"font-size:12px;'>共 {len(df)} 筆</div>",
     unsafe_allow_html=True,
 )
 

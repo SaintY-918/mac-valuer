@@ -1,43 +1,50 @@
-# SainTech Design System — Streamlit theme
+# Streamlit theme.
 #
-# The brand lives here rather than in CSS overrides. Painting .stApp dark with
-# injected CSS left Streamlit itself on its light theme: headings stayed
-# rgb(49,51,63) on a dark background and every widget kept light-theme styling.
-# Setting the real theme makes Streamlit's own controls adopt the brand instead
-# of being fought with selectors.
+# The theme lives here rather than in injected CSS. Painting .stApp with CSS
+# left Streamlit itself on its own theme: headings stayed rgb(49,51,63) and
+# every widget kept default styling. Setting the real theme makes Streamlit's
+# controls follow along instead of being fought with selectors.
 #
-# Values are lifted verbatim from the design system project
-# (tokens/colors.css, typography.css, layout.css).
+# The palette is unbranded on purpose — this used to carry the SainTech blue,
+# which was inherited rather than chosen for a price-comparison list.
 
 [theme]
-base = "dark"
+base = "light"
 
-primaryColor           = "#1F48FF"   # --blue-500, core brand
-backgroundColor        = "#0A0E1A"   # --ink-900
-secondaryBackgroundColor = "#11162A" # --ink-800
-textColor              = "#C7CCD8"   # --text-body
-borderColor            = "#1B2238"   # --border-subtle
-linkColor              = "#15E0FF"   # --cyan-500, "new / live / highlight"
+# One accent, and it stays out of the way. The green / amber / red that mark a
+# listing's value are the page's only saturated colour, so the interactive
+# accent is a calm blue that cannot be mistaken for a verdict.
+primaryColor             = "#1A6ACF"
+backgroundColor          = "#F5F6F8"   # cool off-white, not paper cream
+secondaryBackgroundColor = "#FFFFFF"   # rows and panels sit above the ground
+textColor                = "#111418"   # near-black with a blue bias
+borderColor              = "#E4E7EC"
+linkColor                = "#1A6ACF"
 
-# Semantic scale doubles as the VFM verdict bands.
-greenColor  = "#16C76A"
-orangeColor = "#FFB020"
-redColor    = "#FF3B47"
+# The verdict bands. Muted deliberately: three saturated badges per row would
+# compete with the price, which is the other thing the eye needs.
+greenColor  = "#2E7D5B"
+orangeColor = "#A8761F"
+redColor    = "#9E4F55"
 
-# Archivo 900 for display, Noto Sans TC for Han body, JetBrains Mono for
-# specs/prices/model numbers. Streamlit loads each from the Google Fonts CSS.
-font        = "Noto Sans TC:https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap"
-headingFont = "Archivo:https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;800;900&display=swap"
-codeFont    = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap"
+# Inter throughout, for Latin and headings alike, with Noto Sans TC behind it
+# for the Chinese in seller titles. Inter's proportions are the closest freely
+# licensed match to San Francisco — Apple's own SF Pro and PingFang TC are
+# licensed only for apps on Apple platforms and cannot be served from a site.
+#
+# No code font is declared. Prices and specs use Inter with tabular figures
+# instead: a monospaced face reads as terminal output, and Apple sets its own
+# prices in SF with tabular numerals rather than switching typeface.
+font        = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
 
-# "The brand never whispers" — display weight is Archivo 900 for h1/h2,
-# stepping down for the smaller headings.
-headingFontWeights = [900, 900, 800, 700, 700, 700]
+# Restrained headings. The old 900 weights were a brand rule ("the brand never
+# whispers") that no longer applies, and at 900 Inter fights the data.
+headingFontWeights = [700, 700, 600, 600, 600, 600]
 
-# "Hardware feels squared, not bubbly" — radii stay small-to-medium.
-baseRadius   = "10px"
-buttonRadius = "10px"
+baseRadius   = "8px"
+buttonRadius = "8px"
 
 [theme.sidebar]
-backgroundColor = "#11162A"
-borderColor     = "#1B2238"
+backgroundColor = "#FFFFFF"
+borderColor     = "#E4E7EC"
