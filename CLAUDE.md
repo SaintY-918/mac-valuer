@@ -7,7 +7,7 @@
 | 模組 | 規格文件 | 狀態 |
 |------|---------|------|
 | 爬蟲介面（Strategy Pattern）、PTT／蝦皮實作 | `.spec/specs/scraper/spec.md` | ✅ 已撰寫 |
-| 資料庫策略、Schema、upsert 規則 | `.spec/specs/database/spec.md` | ⬜ 尚未撰寫 |
+| 資料庫策略、Schema、時間欄位語意、下架判定 | `.spec/specs/database/spec.md` | ✅ 已撰寫 |
 | MacBookSpec、ScoringWeights、RawListing | `.spec/specs/data-models/spec.md` | ⬜ 尚未撰寫 |
 | LLM Parser、Regex 抽取規則、資料修復 | `.spec/specs/llm-parser/spec.md` | ✅ 已撰寫 |
 | VFM 公式、晶片基準分、晶片抽取規則 | `.spec/specs/score-engine/spec.md` | ✅ 已撰寫 |

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -42,6 +43,19 @@ logger = logging.getLogger(__name__)
 # Neo. "A18 Pro" is a real Mac chip, and a title carrying one used to yield no
 # chip at all, which meant the listing was discarded outright.
 _CHIP_RE = re.compile(r"\b([MA])(\d{1,2})\s*(PRO|MAX|ULTRA)?\b", re.I)
+
+
+# The parse step re-reads stored text, so its cost scales with the size of the
+# database rather than with how many new listings turned up. Left uncapped it
+# grows into the Gemini free tier's 500-a-day ceiling on its own: at the
+# observed rate roughly 770 rows would have been enough.
+MAX_REPAIR_CALLS = int(os.getenv("MAX_REPAIR_CALLS_PER_RUN", "50"))
+
+
+def _parse_input_hash(title: str, body: str) -> str:
+    """Fingerprint of the text a parse attempt would read."""
+    payload = f"{title or ''}\x00{body or ''}".encode()
+    return hashlib.sha256(payload).hexdigest()[:16]
 
 
 def force_extract_chip(title: str) -> str | None:
@@ -156,7 +170,18 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
         return
 
     print("\n=== Step 2: Database Repair & Hard Extraction ===")
+    # Only the sources this run actually scraped. A source that was not fetched
+    # cannot have gained a row, and rewriting its rows here made a Shopee-only
+    # local run touch PTT and Carousell data that CI is responsible for.
+    # --skip-scrape is the exception: it exists to re-parse what is already
+    # stored, so scoping it to the sources of a scrape that did not happen would
+    # leave it with nothing to do.
     all_items = db.get_all_deals()
+    if not skip_scrape:
+        all_items = [d for d in all_items if d.get("source") in sources_attempted]
+
+    budget = MAX_REPAIR_CALLS
+    skipped_unchanged = 0
 
     for i, item in enumerate(all_items):
         url, title, body = item["url"], item["title"], item["body_content"]
@@ -166,7 +191,11 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
             not p_json
             or not p_json.get("chip")
             or p_json.get("chip") == "None"
-            or p_json.get("location") == "未知"
+            # `location == "未知"` used to appear here. It cannot: the tail of
+            # this loop *sets* location to "未知" when it is missing, so the
+            # repair produced the exact value that marked the row as needing
+            # repair. 69 of 186 rows looped on that alone — 57% of the nightly
+            # LLM spend, on work that could never succeed.
             or not p_json.get("price")
             or not p_json.get("ram_gb")
             or not p_json.get("ssd_gb")
@@ -178,6 +207,20 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
 
         if not needs_fix:
             continue
+
+        # The parse reads only text already in the database — it never refetches
+        # the page. So a second attempt on unchanged text asks the same question
+        # and gets the same answer. Retry only once the listing itself changed.
+        text_hash = _parse_input_hash(title, body)
+        if p_json and p_json.get("parse_input_hash") == text_hash:
+            skipped_unchanged += 1
+            continue
+
+        if budget <= 0:
+            logger.warning("MAX_REPAIR_CALLS_PER_RUN (%d) reached — %d rows left for the "
+                           "next run", MAX_REPAIR_CALLS, len(all_items) - i)
+            break
+        budget -= 1
 
         print(f"   [{i+1}/{len(all_items)}] REPAIRING: {title[:30]}...")
         clean_title = re.sub(r"\[.*?\]", "[販售]", title)
@@ -223,9 +266,20 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
         # in the post body was invisible to both the alert and the dashboard.
         res_dict["defects"] = find_defects(title, res_dict.get("condition"), body)
 
-        db.save_deal(url, title, body, res_dict)
+        # Stamp the text this parse was derived from. If the row still comes out
+        # incomplete, the next run recognises it has already asked this exact
+        # question and moves on; a rescrape that changes the text clears it.
+        res_dict["parse_input_hash"] = text_hash
+
+        # update_parsed, not save_deal: nothing here saw the listing on the
+        # platform, so last_seen must not move. See DBManager.update_parsed.
+        db.update_parsed(url, res_dict)
         # No sleep here: llm_parser throttles itself to GEMINI_RPM. A flat 1 s
         # wait allowed up to 60 calls a minute against a 15 RPM free-tier cap.
+
+    if skipped_unchanged:
+        logger.info("Parse: skipped %d row(s) whose text has not changed since the "
+                    "last unsuccessful attempt", skipped_unchanged)
 
     print("\n=== Step 3: Aggregating Final Data ===")
     all_parsed = db.get_all_parsed_deals()

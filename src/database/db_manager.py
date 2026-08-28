@@ -129,6 +129,31 @@ class DBManager:
         except Exception as e:
             logger.error("DB write error for %s: %s", url, e)
 
+    def update_parsed(self, url: str, parsed_json: Dict) -> bool:
+        """Replace a row's parsed spec without claiming the listing was seen.
+
+        save_deal() records a sighting: it refreshes last_seen, which sweep_stale
+        reads as "this listing was still on the platform at that moment". The
+        parse step has no such evidence — it re-reads text already in the
+        database and never visits the site.
+
+        Using save_deal there made every row that failed to parse immortal: it
+        was rewritten each night, last_seen moved forward, and the sweep could
+        never age it out. 121 of 186 rows were in that state.
+        """
+        try:
+            with self.Session() as session:
+                deal = session.get(Deal, url)
+                if not deal:
+                    return False
+                deal.parsed_json = json.dumps(parsed_json, ensure_ascii=False)
+                deal.updated_at = datetime.now(timezone.utc)
+                session.commit()
+                return True
+        except Exception as e:
+            logger.error("DB update_parsed error for %s: %s", url, e)
+            return False
+
     def update_last_alerted_price(self, url: str, price: int) -> bool:
         """Persist the price at which a notifier alert was just sent."""
         try:
@@ -208,6 +233,10 @@ class DBManager:
                         "body_content": d.body_content,
                         "parsed_json": d.parsed_json,
                         "status": d.status,
+                        # Callers scope work by source. Omitting it here is the
+                        # same omission that once left the dashboard unable to
+                        # tell where a listing came from.
+                        "source": d.source,
                     }
                     for d in deals
                 ]
