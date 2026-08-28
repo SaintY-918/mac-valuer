@@ -43,7 +43,16 @@ logger = logging.getLogger(__name__)
 # Two families: the M-series, and the A-series that arrived with the MacBook
 # Neo. "A18 Pro" is a real Mac chip, and a title carrying one used to yield no
 # chip at all, which meant the listing was discarded outright.
-_CHIP_RE = re.compile(r"\b([MA])(\d{1,2})\s*(PRO|MAX|ULTRA)?\b", re.I)
+# Boundaries are spelled out rather than using \b, which is Unicode-aware and
+# counts CJK as word characters. "M2晶片" therefore had no boundary after the 2
+# and never matched at all — and Chinese sellers write it exactly that way, so
+# the regex fallback was useless for most Shopee titles and every one of them
+# depended on the LLM having succeeded.
+#
+# Requiring the next character not to be alphanumeric still rejects Apple's
+# model identifiers, which are A plus four digits (A1706, A2338).
+_CHIP_RE = re.compile(
+    r"(?<![A-Za-z0-9])([MA])(\d{1,2})\s*(PRO|MAX|ULTRA)?(?![A-Za-z0-9])", re.I)
 
 
 # The parse step re-reads stored text, so its cost scales with the size of the
@@ -59,6 +68,20 @@ def _parse_input_hash(title: str, body: str) -> str:
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
+# Intel's Core M line was m3 / m5 / m7, which collides head-on with Apple's
+# M3 / M5. A 2016 12" Retina MacBook with a "Core m5 1.2G" was read as an Apple
+# M5, given that chip's 17,933 benchmark, and scored 1060 — top of the whole
+# site and well past the alert threshold. An advertised clock speed is the other
+# tell: Apple does not market Apple Silicon by GHz, and RAM and storage are
+# written "8G/256G", never "1.2G".
+_INTEL_MARKERS = re.compile(
+    r"\bintel\b|\bcore\s*[mi]\b|\bi[3579][\s\-]|\b\d\.\d\s*G(Hz)?\b", re.I)
+
+# Apple Silicon starts with the November 2020 M1. A listing dated earlier cannot
+# have one, whatever its title says.
+APPLE_SILICON_FIRST_YEAR = 2020
+
+
 def force_extract_chip(title: str) -> str | None:
     """Best chip found in the title, preferring the highest tier mentioned.
 
@@ -67,7 +90,12 @@ def force_extract_chip(title: str) -> str | None:
     reads that as M1 Pro — the lower tier. That is the safe direction: a lower
     benchmark understates VFM, and an overstated one would fire a false
     bargain alert.
+
+    Returns None for an Intel machine rather than guessing: this project scores
+    Apple Silicon, and CHIP_BENCHMARKS has no Intel entries to score against.
     """
+    if _INTEL_MARKERS.search(title):
+        return None
     best = None
     for family, gen, variant in _CHIP_RE.findall(title.upper()):
         name = f"{family.upper()}{int(gen)}" + (f" {variant.title()}" if variant else "")
@@ -267,6 +295,19 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
 
         if not res_dict.get("location") or res_dict.get("location") == "未知":
             res_dict["location"] = "未知"
+
+        # The chip can also arrive from the LLM, which does not know about the
+        # Intel collision either. A year before 2020 and an Apple chip cannot
+        # both be true; the year is the more trustworthy of the two, because it
+        # is read from the whole listing rather than matched from four
+        # characters of the title.
+        year = res_dict.get("release_year")
+        if res_dict.get("chip") and year and int(year) < APPLE_SILICON_FIRST_YEAR:
+            logger.info("Intel-era listing: discarding '%s' (chip=%s, year=%s)",
+                        title[:40], res_dict.get("chip"), year)
+            if p_json:
+                db.update_parsed(url, {**p_json, "parse_input_hash": text_hash})
+            continue
 
         chip = res_dict.get("chip")
         if chip is None or str(chip).strip().lower() in _INVALID_CHIPS:

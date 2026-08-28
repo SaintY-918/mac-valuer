@@ -195,3 +195,68 @@ def test_the_a_series_regex_does_not_match_ordinary_title_text():
     """Titles are full of stray letters and numbers; A-matching must stay tight."""
     assert force_extract_chip("MacBook Air 13 2020 8G/256G") is None
     assert force_extract_chip("MacBook Pro 13吋 A1706 鍵盤") != "A17 Pro"
+
+
+# ── Intel Core M collides with Apple M ────────────────────────────────────────
+# Intel's Core M line was m3/m5/m7. A 2016 12" Retina MacBook advertising
+# "Core m5 1.2G" was read as an Apple M5, handed that chip's 17,933 benchmark,
+# and scored 1060 — the top listing on the site, past the alert threshold.
+
+def test_an_intel_core_m_is_not_read_as_an_apple_chip():
+    title = "（Apple蘋果）超輕薄MacBook Retina 12吋 M5  1.2G 處理器 8GB 記憶體 512G"
+    assert force_extract_chip(title) is None
+
+
+@pytest.mark.parametrize("title", [
+    "MacBook Pro 13吋 Intel i5 8G/256G",
+    "MacBook Air 2017 Core i7 8G",
+    "MacBook 12吋 Core m3 1.1GHz",
+    "MacBook Pro 15 i9-9880H 16G",
+])
+def test_intel_machines_yield_no_chip(title):
+    """No Intel entries exist in CHIP_BENCHMARKS, so a guess would score against
+    the 5000 fallback rather than anything real."""
+    assert force_extract_chip(title) is None
+
+
+@pytest.mark.parametrize("title", [
+    "[販售] MacBook Air 13 M1 8G/256G 2020",
+    "MacBook Pro 14 M3 Pro 18G/512G",
+    "MacBook Air 15 M4 16G/512G 2025",
+    "MacBook Neo A18 Pro 8G/256G",
+    # Storage and memory are written without a decimal point, so the clock-speed
+    # rule must not catch them.
+    "MacBook Pro 16 M4 Max 48G/1T",
+])
+def test_apple_silicon_still_extracts(title):
+    assert force_extract_chip(title) is not None
+
+
+# ── CJK titles ────────────────────────────────────────────────────────────────
+# \b is Unicode-aware and treats CJK as word characters, so "M2晶片" had no
+# boundary after the 2 and never matched. Chinese sellers write it exactly that
+# way, which left the regex fallback useless for most Shopee titles — every one
+# of them relied on the LLM having succeeded.
+
+@pytest.mark.parametrize("title,expected", [
+    ("Apple MacBook Air Retina 15 吋 M2晶片 2023 蘋果筆電", "M2"),
+    ("Macbook air 15吋 m4晶片 16GB 256GB 極新二手", "M4"),
+    ("蘋果M3 Pro晶片 14吋", "M3 Pro"),
+    ("MacBook Pro 16吋M4 Max晶片", "M4 Max"),
+])
+def test_a_chip_written_against_chinese_text_is_found(title, expected):
+    assert force_extract_chip(title) == expected
+
+
+@pytest.mark.parametrize("title", [
+    "MacBook Pro 13吋 A1706 鍵盤更換",
+    "MacBook Air A1932 外殼",
+])
+def test_apple_model_identifiers_are_still_rejected(title):
+    """A plus four digits is a model number, not an A-series chip."""
+    assert force_extract_chip(title) is None
+
+
+def test_a_chip_token_inside_a_word_is_not_matched():
+    """HDMI1 and similar must not read as M1."""
+    assert force_extract_chip("MacBook 轉接器 HDMI1 埠") is None
