@@ -59,13 +59,22 @@ def test_missing_sections_are_absent_not_empty():
     assert extract_spec_line("[售價] 30000") is None
 
 
-def test_no_source_file_carries_a_stray_control_character():
+def test_no_tracked_file_carries_a_stray_control_character():
     """The price bug was invisible on screen: a raw 0x08 byte sitting inside a
-    raw string where \\b was meant. Nothing but a scan will catch the next one."""
+    raw string where \\b was meant. Nothing but a scan will catch the next one.
+
+    Every tracked text file, not only Python. The scan started at *.py and
+    promptly missed the same byte landing twice in score-engine/spec.md and
+    twice in CHANGELOG.md, from the same cause — writing \\b through a shell
+    heredoc. A spec that silently says "do not use ``" teaches the next reader
+    nothing.
+    """
     import subprocess
 
+    patterns = ["*.py", "*.md", "*.toml", "*.yml", "*.yaml", "*.ps1", "*.json", "*.ini"]
+    tracked = subprocess.check_output(["git", "ls-files", *patterns], text=True).split()
     offenders = []
-    for path in subprocess.check_output(["git", "ls-files", "*.py"], text=True).split():
+    for path in tracked:
         try:
             text = open(path, encoding="utf-8").read()
         except OSError:
