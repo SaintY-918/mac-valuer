@@ -45,6 +45,39 @@ def _label(source: str) -> str:
     return _SOURCE_LABELS.get(source, source)
 
 
+def _heartbeat_content(stats: dict) -> str:
+    """The daily summary text. Separate from sending so it can be tested."""
+    counts: dict = stats.get("counts") or {}
+    errors: dict = stats.get("errors") or {}
+    alerts_sent = stats.get("alerts_sent", 0)
+
+    lines = []
+    for source in sorted(set(counts) | set(errors)):
+        if source in errors:
+            reason = str(errors[source]).replace(chr(10), " ")[:180]
+            lines.append(f"- ⛔ {_label(source)}：**爬取失敗** — `{reason}`")
+        else:
+            lines.append(f"- ✅ {_label(source)}：新增/更新 **{counts.get(source, 0)}** 筆")
+
+    lines.append(f"- 觸發警報：**{alerts_sent}** 筆")
+
+    # Reported on its own line, not as a scraper failure. Every source may have
+    # been fetched perfectly and the listings still be unparsed, and calling
+    # that "scrape failed" would point at the wrong thing entirely.
+    quota = stats.get("quota_exhausted")
+    if quota:
+        lines.append("- 🪫 **Gemini 今日額度用盡**（免費方案 500 次／日）"
+                     "，本次未解析的物件會在額度重置後補上")
+
+    if errors:
+        header = "⚠️ **每日爬蟲巡邏 — 有來源失敗**"
+    elif quota:
+        header = "🪫 **每日爬蟲巡邏完畢 — 解析未完成**"
+    else:
+        header = "✅ **每日爬蟲巡邏完畢**"
+    return chr(10).join([header, *lines])
+
+
 def send_heartbeat(stats: dict) -> None:
     """Send a daily pipeline summary to Discord. Silent no-op if webhook URL is unset.
 
@@ -56,20 +89,7 @@ def send_heartbeat(stats: dict) -> None:
     if not webhook_url:
         return
 
-    counts: dict = stats.get("counts") or {}
-    errors: dict = stats.get("errors") or {}
-    alerts_sent = stats.get("alerts_sent", 0)
-
-    lines = []
-    for source in sorted(set(counts) | set(errors)):
-        if source in errors:
-            reason = str(errors[source]).replace("\n", " ")[:180]
-            lines.append(f"- ⛔ {_label(source)}：**爬取失敗** — `{reason}`")
-        else:
-            lines.append(f"- ✅ {_label(source)}：新增/更新 **{counts.get(source, 0)}** 筆")
-
-    header = "⚠️ **每日爬蟲巡邏 — 有來源失敗**" if errors else "✅ **每日爬蟲巡邏完畢**"
-    content = "\n".join([header, *lines, f"- 觸發警報：**{alerts_sent}** 筆"])
+    content = _heartbeat_content(stats)
     try:
         resp = requests.post(webhook_url, json={"content": content}, timeout=HTTP_TIMEOUT_SECONDS)
         if not (200 <= resp.status_code < 300):

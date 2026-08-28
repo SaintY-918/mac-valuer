@@ -19,6 +19,8 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.db_manager import Base, DBManager, Deal
 from src.main import _parse_input_hash
+from src.notifier.discord_notify import _heartbeat_content
+from src.parser.llm_parser import _is_daily_quota_error
 
 # ── the fingerprint ───────────────────────────────────────────────────────────
 
@@ -125,3 +127,70 @@ def test_a_rescraped_row_is_asked_again():
 def test_a_row_never_attempted_is_asked():
     assert _should_reparse({"chip": "M1"}, "t", "b")
     assert _should_reparse(None, "t", "b")
+
+
+# ── 429 is two different problems ─────────────────────────────────────────────
+# The per-minute limit is worth sleeping through; the daily one is not, and
+# retrying it cost 18 minutes of a run capped at an hour.
+
+_DAILY = (
+    "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your "
+    "current quota... * Quota exceeded for metric: "
+    "generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 500', "
+    "'details': [{'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier'}]}}"
+)
+_PER_MINUTE = (
+    "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'details': "
+    "[{'quotaId': 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier'}]}}"
+)
+
+
+def test_the_daily_quota_is_recognised():
+    """This is the message that actually arrived on 2026-08-28."""
+    assert _is_daily_quota_error(_DAILY)
+
+
+def test_the_per_minute_quota_is_not_treated_as_daily():
+    """Sleeping 65s does clear this one, so it must keep retrying."""
+    assert not _is_daily_quota_error(_PER_MINUTE)
+
+
+def test_a_per_minute_id_wins_even_when_the_daily_metric_is_mentioned():
+    """The metric name appears in both; the quotaId is what decides."""
+    mixed = _PER_MINUTE + " metric: generate_content_free_tier_requests"
+    assert not _is_daily_quota_error(mixed)
+
+
+def test_unrelated_errors_are_not_quota_errors():
+    assert not _is_daily_quota_error("503 Service Unavailable")
+    assert not _is_daily_quota_error("400 INVALID_ARGUMENT")
+    assert not _is_daily_quota_error("")
+
+
+# ── the heartbeat says which thing went wrong ─────────────────────────────────
+
+def test_quota_exhaustion_is_not_reported_as_a_scrape_failure():
+    """Every source can be fetched perfectly and the listings still be unparsed.
+
+    Calling that "爬取失敗" points at the wrong thing, and the reader would go
+    looking at the scrapers.
+    """
+    msg = _heartbeat_content({"counts": {"ptt": 3}, "alerts_sent": 0,
+                              "quota_exhausted": "429 ..."})
+    assert "爬取失敗" not in msg
+    assert "額度用盡" in msg
+    assert "✅ PTT" in msg
+
+
+def test_a_clean_run_says_so():
+    msg = _heartbeat_content({"counts": {"ptt": 3}, "alerts_sent": 1})
+    assert msg.startswith("✅")
+    assert "額度" not in msg
+
+
+def test_a_source_failure_still_outranks_a_quota_warning():
+    """A broken scraper is the more urgent of the two."""
+    msg = _heartbeat_content({"counts": {"ptt": 3}, "errors": {"carousell": "403"},
+                              "alerts_sent": 0, "quota_exhausted": "429 ..."})
+    assert msg.startswith("⚠️")
+    assert "爬取失敗" in msg and "額度用盡" in msg

@@ -55,6 +55,38 @@ _throttle_lock = threading.Lock()
 _last_call_at = 0.0
 
 
+class GeminiDailyQuotaExhausted(RuntimeError):
+    """The 500-a-day free tier allowance is gone until midnight Pacific.
+
+    Distinct from a per-minute 429 because the response is different: the
+    per-minute limit is worth sleeping through, the daily one is not worth
+    another call today. Callers stop asking and let the rest of the pipeline
+    finish on what is already parsed.
+    """
+
+
+# The API returns 429 for both quotas. The body names which: per-day carries
+# `PerDay` in its quotaId, per-minute carries `PerMinute`. Matching the id
+# rather than the prose keeps this working when the message text is reworded.
+_DAILY_QUOTA_MARKERS = (
+    "generaterequestsperdayperprojectpermodel",
+    "generate_content_free_tier_requests",
+    "perdayperproject",
+)
+
+
+def _is_daily_quota_error(err: str) -> bool:
+    low = err.lower()
+    if "429" not in low and "resource_exhausted" not in low:
+        return False
+    # A per-minute rejection can mention the daily metric in passing; an
+    # explicit PerMinute quotaId settles it in the other direction.
+    if "perminute" in low.replace("_", ""):
+        return False
+    return any(m in low.replace("_", "").replace("-", "") or m in low
+               for m in _DAILY_QUOTA_MARKERS)
+
+
 def _throttle() -> None:
     """Block until the next call would stay inside the per-minute budget."""
     global _last_call_at
@@ -285,10 +317,17 @@ BODY:
                 break
             except Exception as e:
                 err_str = str(e)
+                # A 429 is two different problems wearing one status code, and
+                # only one of them is worth waiting out. The daily allowance
+                # resets at midnight Pacific, so sleeping 65 s against it burns
+                # the run for nothing: 17 retries cost 18 minutes of a task
+                # capped at an hour, and the pipeline never reached scoring.
+                if _is_daily_quota_error(err_str):
+                    raise GeminiDailyQuotaExhausted(err_str) from e
                 if attempt < max_retries - 1 and ("503" in err_str or "429" in err_str or "unavailable" in err_str.lower()):
-                    # A 429 here is the per-minute quota, so the wait has to
-                    # clear that window — 2 s then 4 s just retried into the
-                    # same rejection.
+                    # The per-minute quota, where the wait does clear the
+                    # window — 2 s then 4 s just retried into the same
+                    # rejection.
                     delay = 65 if "429" in err_str else base_delay
                     logger.info("Model busy, retrying in %ds... (Attempt %d/%d) %s",
                                 delay, attempt + 1, max_retries, err_str)

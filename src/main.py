@@ -15,6 +15,7 @@ from src.models.mac_spec import MacBookSpec
 from src.notifier import send_alert, send_heartbeat
 from src.parser.condition_flags import defects_for, find_defects
 from src.parser.llm_parser import (
+    GeminiDailyQuotaExhausted,
     extract_specs_from_text,
     infer_correct_year,
     parse_deal_llm,
@@ -182,6 +183,7 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
 
     budget = MAX_REPAIR_CALLS
     skipped_unchanged = 0
+    quota_exhausted = None
 
     for i, item in enumerate(all_items):
         url, title, body = item["url"], item["title"], item["body_content"]
@@ -225,7 +227,17 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
         print(f"   [{i+1}/{len(all_items)}] REPAIRING: {title[:30]}...")
         clean_title = re.sub(r"\[.*?\]", "[販售]", title)
 
-        spec_obj = parse_deal_llm(clean_title, body)
+        try:
+            spec_obj = parse_deal_llm(clean_title, body)
+        except GeminiDailyQuotaExhausted as e:
+            # Nothing else today will succeed either. Stop asking and let the
+            # run finish scoring, alerting and sweeping on what is already
+            # parsed, rather than sleeping into the scheduler's time limit.
+            quota_exhausted = str(e)
+            logger.warning("Gemini daily quota exhausted after %d parse call(s); "
+                           "skipping the rest of Step 2 and continuing the run",
+                           MAX_REPAIR_CALLS - budget)
+            break
         res_dict = spec_obj.model_dump() if spec_obj else (p_json or {})
 
         if not res_dict.get("chip") or res_dict.get("chip") == "None":
@@ -259,6 +271,16 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
         chip = res_dict.get("chip")
         if chip is None or str(chip).strip().lower() in _INVALID_CHIPS:
             logger.info("Chip filter: discarding '%s' (chip=%s)", title[:40], chip)
+            # Record the attempt even though the row is being discarded, or it
+            # comes back for another LLM call every single run — the loop this
+            # whole budget exists to stop.
+            #
+            # Only for a row that already had a parsed spec. Writing one here
+            # for a row that has none would create a parsed_json holding just a
+            # hash, and Step 3 reads every row with a non-null parsed_json. A
+            # listing that has never parsed at all is worth one attempt a day.
+            if p_json:
+                db.update_parsed(url, {**p_json, "parse_input_hash": text_hash})
             continue
 
         # Detected here because this is the only place the body is still in
@@ -368,6 +390,10 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
             "counts": {src: upsert_counts.get(src, 0) for src in sorted(sources_attempted)},
             "errors": source_errors,
             "alerts_sent": alerts_sent,
+            # Reported separately from source_errors: no scraper failed, and
+            # calling it a scrape failure would be a lie that also hides the
+            # one thing worth acting on.
+            "quota_exhausted": quota_exhausted,
         })
     except Exception as e:
         logger.error("Heartbeat step failed (non-fatal): %s", e)
