@@ -8,11 +8,13 @@ machine differently on the page and in the alert.
 import pytest
 
 from src.calculator.score_engine import (
+    FORM_INCHES,
     ScoringWeights,
     adjusted_score,
     depreciation,
     form_factor_key,
     get_vfm_score,
+    nominal_inches,
     vfm_from_mapping,
 )
 from src.main import force_extract_chip
@@ -260,3 +262,40 @@ def test_apple_model_identifiers_are_still_rejected(title):
 def test_a_chip_token_inside_a_word_is_not_matched():
     """HDMI1 and similar must not read as M1."""
     assert force_extract_chip("MacBook 轉接器 HDMI1 埠") is None
+
+
+# ── Screen size: four marketing sizes, seven written forms ────────────────────
+# The measured diagonal changes between generations (an Air 13" is 13.3" on the
+# M1 and 13.6" from the M2 on) and sellers copy whichever they saw. The live
+# database held 13.0, 13.3, 13.6, 14.0, 14.2, 15.0, 15.6 and 16.2 — and 15.6 is
+# a Windows laptop size Apple has never shipped.
+
+@pytest.mark.parametrize("series,raw,expected", [
+    ("Air", 13.0, 13), ("Air", 13.3, 13), ("Air", 13.6, 13),
+    ("Air", 15.0, 15), ("Air", 15.3, 15),
+    ("Pro 13", 13.3, 13),
+    ("Pro 14/16", 14.0, 14), ("Pro 14/16", 14.2, 14),
+    ("Pro 14/16", 16.0, 16), ("Pro 14/16", 16.2, 16),
+    ("Neo", 13, 13),
+])
+def test_screen_sizes_collapse_to_apple_marketing_sizes(series, raw, expected):
+    assert nominal_inches(series, raw) == expected
+
+
+def test_a_size_apple_never_made_still_lands_somewhere_sensible():
+    """15.6" is a Windows size. One listing claimed it; it is a 15" Air."""
+    assert nominal_inches("Air", 15.6) == 15
+
+
+@pytest.mark.parametrize("raw", [None, 0, ""])
+def test_an_unparsed_size_is_not_guessed(raw):
+    """form_factor_key defaults to 13.3 for scoring, which is the right
+    fallback for a multiplier and the wrong thing to print on a card."""
+    assert nominal_inches("Air", raw) is None
+
+
+def test_the_displayed_size_agrees_with_the_scored_form_factor():
+    """Both come from form_factor_key, so they cannot drift apart."""
+    for series, raw in [("Air", 13.6), ("Air", 15.3), ("Pro 14/16", 14.2), ("Pro 14/16", 16.2)]:
+        key = form_factor_key(series, raw)
+        assert FORM_INCHES[key] == nominal_inches(series, raw)

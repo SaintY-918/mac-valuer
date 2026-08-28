@@ -91,6 +91,28 @@ def form_factor_key(series: Any, screen_size: Any) -> str:
     return "pro13"
 
 
+# Apple markets four sizes; sellers write seven. The measured diagonal varies
+# by generation (an Air 13" is 13.3" on the M1 and 13.6" from the M2 on) and
+# gets copied inconsistently, and the live data also held a 15.6" — a Windows
+# laptop size Apple has never shipped.
+#
+# Keyed off form_factor_key rather than re-thresholding the raw number, so the
+# size on the card and the multiplier used to score it can never disagree.
+FORM_INCHES = {"air13": 13, "air15": 15, "pro13": 13, "pro14": 14, "pro16": 16}
+
+
+def nominal_inches(series: Any, screen_size: Any) -> int | None:
+    """Apple's marketing size for a listing, or None when nothing was parsed.
+
+    None rather than a guess: form_factor_key falls back to 13.3" for a missing
+    value, which is the right default for scoring but would state a size on the
+    card that nobody actually read.
+    """
+    if _num(screen_size) <= 0:
+        return None
+    return FORM_INCHES.get(form_factor_key(series, screen_size))
+
+
 def depreciation(release_year: Any) -> float:
     """Straight-line-by-year decay. Unknown years are treated as current, since
     guessing old halves the score of a machine that may be new."""

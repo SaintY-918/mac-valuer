@@ -39,6 +39,7 @@ from src.calculator.score_engine import (
     current_year,
     depreciation,
     form_factor_key,
+    nominal_inches,
     vfm_from_mapping,
 )
 from src.database.db_manager import DBManager
@@ -353,6 +354,14 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
 }
 .st-footer a { color: var(--accent); text-decoration: none; }
 .st-footer a:hover { text-decoration: underline; }
+
+/* Wide layout, but not unbounded. At 1440px the row stretched the full window
+   and left several hundred pixels of nothing between the model and its price,
+   so the eye had to travel the whole way to pair them up. Comparison sites cap
+   the result column for the same reason. */
+[data-testid="stMainBlockContainer"] {
+    max-width: 1120px;
+}
 
 /* ── Sidebar affordance ───────────────────────────────────────────────────
    Collapsed, the sidebar leaves only a chevron, and nothing says the filters
@@ -718,8 +727,12 @@ def _model_label(row: dict) -> str:
     family = "Air" if "air" in series else "Pro" if "pro" in series else ""
 
     parts = [" ".join(p for p in ("MacBook", family) if p)]
-    if (screen := _nan_safe(row.get("screen_size"), 0)):
-        parts[0] += f' {float(screen):g}"'
+    # Apple's marketing size, not the measured diagonal. Sellers copy 13, 13.3
+    # and 13.6 for the same machine, and one listing claimed 15.6 — a size
+    # Apple has never made. nominal_inches derives it from the same function
+    # that picks the scoring multiplier, so the two cannot drift.
+    if (inches := nominal_inches(row.get("series"), row.get("screen_size"))):
+        parts[0] += f' {inches}"'
     if (chip := str(row.get("chip") or "").strip()) and chip.lower() != "none":
         parts.append(chip)
     return " · ".join(parts)
@@ -753,8 +766,6 @@ def _render_deal(row: dict, is_top: bool) -> str:
         chips.append(f"<i>{ram}GB</i>")
     elif ssd:
         chips.append(f"<i>{ssd // 1024}TB</i>" if ssd >= 1024 else f"<i>{ssd}GB</i>")
-    if (screen := _nan_safe(row.get("screen_size"), 0)):
-        chips.append(f'<i>{float(screen):.1f}"</i>')
     if (year := _int_or_none(row.get("release_year"))):
         chips.append(f"<i>{year}</i>")
     if (batt := _int_or_none(row.get("battery_health"))):

@@ -189,12 +189,14 @@ def check_scoring_constants(errors: list[str]) -> None:
                 f"(Air 13, Air 15, Pro 13, Pro 14, Pro 16)"
             )
 
-    # The unknown-chip fallback, quoted more than once in the spec.
+    # The unknown-chip fallback. Anchored on get_benchmark() rather than on any
+    # "回傳 N" in the file: a looser pattern read "回傳 13 / 14 / 15 / 16" out of
+    # the screen-size section and reported a mismatch that did not exist. A
+    # checker that cries wolf is the one failure mode this script cannot afford.
     bench = (ROOT / "src/utils/benchmark_db.py").read_text(encoding="utf-8")
     m = re.search(r"return (\d+)\s+# Default score", bench)
     if m:
-        for a, b in set(re.findall(r"回傳 (\d+)|預設 (\d+)", spec)):
-            quoted = a or b
+        for quoted in set(re.findall(r"get_benchmark\(\)[^0-9\n]{0,12}(\d+)", spec)):
             if quoted != m.group(1):
                 errors.append(
                     f"score-engine/spec.md quotes an unknown-chip fallback of {quoted}, "
