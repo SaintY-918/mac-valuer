@@ -80,7 +80,9 @@ def form_factor_key(series: Any, screen_size: Any) -> str:
     if math.isnan(inches):
         inches = 13.3
 
-    if "air" in name:
+    # The MacBook Neo is a 13" fanless entry machine — an Air in everything but
+    # the name. Without this it fell through to pro13 by default.
+    if "air" in name or "neo" in name:
         return "air15" if inches >= 15.0 else "air13"
     if inches >= 15.0:
         return "pro16"

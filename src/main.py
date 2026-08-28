@@ -38,7 +38,10 @@ logger = logging.getLogger(__name__)
 # the filter below — silently losing the newest and priciest machines, which are
 # exactly the ones worth tracking. A regex means the next generation needs only
 # a benchmark entry, not a code change here.
-_CHIP_RE = re.compile(r"\bM(\d{1,2})\s*(PRO|MAX|ULTRA)?\b", re.I)
+# Two families: the M-series, and the A-series that arrived with the MacBook
+# Neo. "A18 Pro" is a real Mac chip, and a title carrying one used to yield no
+# chip at all, which meant the listing was discarded outright.
+_CHIP_RE = re.compile(r"\b([MA])(\d{1,2})\s*(PRO|MAX|ULTRA)?\b", re.I)
 
 
 def force_extract_chip(title: str) -> str | None:
@@ -51,10 +54,19 @@ def force_extract_chip(title: str) -> str | None:
     bargain alert.
     """
     best = None
-    for gen, variant in _CHIP_RE.findall(title.upper()):
-        name = f"M{int(gen)}" + (f" {variant.title()}" if variant else "")
+    for family, gen, variant in _CHIP_RE.findall(title.upper()):
+        name = f"{family.upper()}{int(gen)}" + (f" {variant.title()}" if variant else "")
         # "M4 Max" beats a bare "M4" in the same title; higher generations win.
-        rank = (int(gen), {"": 0, "PRO": 1, "MAX": 2, "ULTRA": 3}[variant.upper()])
+        # A-series sorts below every M-series rather than by number, or A18
+        # would outrank an M5 on the digits alone.
+        # Apple ships exactly one A-series Mac chip, so a bare "A18" in a
+        # MacBook title is the A18 Pro. Left alone it misses the benchmark
+        # table and takes the 5,000 fallback, halving the score of a machine
+        # whose seller simply did not type "Pro".
+        if family.upper() == "A" and int(gen) == 18 and not variant:
+            name = "A18 Pro"
+        rank = (0 if family.upper() == "A" else 1,
+                int(gen), {"": 0, "PRO": 1, "MAX": 2, "ULTRA": 3}[variant.upper()])
         if best is None or rank > best[0]:
             best = (rank, name)
     return best[1] if best else None

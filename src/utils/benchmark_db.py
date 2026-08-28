@@ -12,6 +12,7 @@ from typing import Dict
 #   M5      17,933  https://browser.geekbench.com/macs/macbook-pro-14-inch-2025
 #   M5 Pro  28,436  https://www.notebookcheck.net/Apple-M5-Pro-18-Core-Processor-Benchmarks-and-Specs.1242671.0.html
 #   M5 Max  29,233  https://www.macrumors.com/2026/03/05/m5-max-geekbench-benchmarks/
+#   A18 Pro  8,668  https://browser.geekbench.com/v6/cpu/16994247
 CHIP_BENCHMARKS: Dict[str, int] = {
     "M1": 8500,
     "M1 Pro": 12000,
@@ -33,6 +34,10 @@ CHIP_BENCHMARKS: Dict[str, int] = {
     "M5": 17933,
     "M5 Pro": 28436,
     "M5 Max": 29233,
+    # The MacBook Neo (March 2026, $599) is the first Mac on an iPhone chip.
+    # Not an M-series part, so nothing above it applies: 8,668 multi-core puts
+    # it just past the M1, which is what the launch reviews found.
+    "A18 Pro": 8668,
 }
 
 def get_benchmark(chip: str) -> int:

@@ -188,7 +188,10 @@ def infer_correct_year(item: dict, title: str) -> tuple:
     title_lower = title.lower()
     inferred_year = original_year
     is_inferred = False
-    if "m2" in chip.lower() and "air" in series.lower() and "15" in title_lower:
+    # The A18 Pro shipped in exactly one Mac, so the chip alone fixes the year.
+    if "a18" in chip.lower():
+        inferred_year = 2026
+    elif "m2" in chip.lower() and "air" in series.lower() and "15" in title_lower:
         inferred_year = 2023
     elif "pro" in series.lower():
         if "m3" in chip.lower(): inferred_year = 2023

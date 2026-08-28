@@ -157,3 +157,41 @@ def test_nan_in_a_row_does_not_crash_the_score():
                               "screen_size": nan, "series": "Air",
                               "release_year": nan, "price": 30000})
     assert score > 0
+
+
+# ── MacBook Neo / A18 Pro ─────────────────────────────────────────────────────
+# The first Mac on an iPhone chip (March 2026). Before it was added the chip
+# regex matched only M-series, so force_extract_chip returned None and main.py
+# discarded the listing as having no chip at all.
+
+def test_a18_pro_is_extracted_from_a_title():
+    assert force_extract_chip("MacBook Neo A18 Pro 13吋 8G/256G 2026") == "A18 Pro"
+
+
+def test_bare_a18_is_read_as_the_only_a_series_mac_chip():
+    """Apple ships one. A seller who omits "Pro" should not lose half the score."""
+    assert force_extract_chip("MacBook Neo A18 8G/256G") == "A18 Pro"
+
+
+def test_m_series_still_wins_over_a_series_in_the_same_title():
+    """A18 must not outrank M5 on the digits alone."""
+    assert force_extract_chip("MacBook Pro M5 Max 比 A18 Pro 快") == "M5 Max"
+    assert force_extract_chip("MacBook Pro M4 Max 對比 A18 Pro") == "M4 Max"
+
+
+def test_a18_pro_has_a_benchmark():
+    """Without this the Neo takes the unknown-chip fallback of 5000."""
+    assert get_benchmark("A18 Pro") == 8668
+    assert get_benchmark("A18 Pro") > get_benchmark("M1")
+
+
+def test_neo_is_scored_as_a_13_inch_air():
+    """A fanless 13" entry machine, whatever Apple calls it."""
+    assert form_factor_key("Neo", 13) == "air13"
+    assert form_factor_key("MacBook Neo", 13.6) == "air13"
+
+
+def test_the_a_series_regex_does_not_match_ordinary_title_text():
+    """Titles are full of stray letters and numbers; A-matching must stay tight."""
+    assert force_extract_chip("MacBook Air 13 2020 8G/256G") is None
+    assert force_extract_chip("MacBook Pro 13吋 A1706 鍵盤") != "A17 Pro"

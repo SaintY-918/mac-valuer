@@ -45,6 +45,9 @@
 - **晶片基準分改用實測 Geekbench 6 多核並標註來源**；M5 系列先前為外推值。
 
 ### 修正
+- **MacBook Neo（A18 Pro）整批被丟棄**。晶片抽取只認 `M` 開頭，A 系列抽不到晶片，
+  而無晶片的物件會被 `_INVALID_CHIPS` 直接丟掉——與當初 M5 被靜默丟失同一個成因。
+  已支援 A 系列、補上基準分（Geekbench 6 多核 8,668），並歸入 `air13` 形態。
 - **只寫在內文的功能性故障，整個系統看不到**。`find_defects()` 接受 `body_content`，
   Dashboard 與 Discord 也都傳了，但沒有任何讀取路徑會回傳這個欄位，兩邊拿到的都是
   `None`。PTT 賣家慣常把機況寫在內文。判定改到 pipeline 執行並存進 `parsed_json`。
