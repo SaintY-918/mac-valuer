@@ -34,6 +34,10 @@ jobs:
       - name: Lint
         run: python -m ruff check .
 
+      # Stdlib only, so it runs even if the install step above is trimmed.
+      - name: Check docs against code
+        run: python scripts/check_docs.py
+
       # No secrets are provided on purpose. The suite has to pass without a
       # Gemini key or a database — that constraint is what keeps pure logic
       # separable from I/O.

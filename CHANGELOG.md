@@ -12,6 +12,8 @@
   下架判定與各爬蟲的過濾規則。全部為純邏輯，**無金鑰、無資料庫亦可執行**。
 - **CI 品質關卡**：每次 push 與 PR 自動執行 lint 與測試。
 - **ruff linter**（`ruff.toml`），規則經篩選，只保留能抓出 bug 的項目。
+- **文件一致性檢查**（`scripts/check_docs.py`），驗 env 變數、文件連結、spec 索引
+  與評分常數，同時掛在 pytest 與 CI。
 - **旋轉拍賣（Carousell）成為第三個資料來源**。純 HTTP、無反爬牆、資料位於
   schema.org JSON-LD，因此可在 GitHub Actions 上執行，不依賴本機。
   僅使用對方 `robots.txt` 允許的入口（sitemap 與 `/p/` 商品頁）。
@@ -41,6 +43,9 @@
 - **晶片基準分改用實測 Geekbench 6 多核並標註來源**；M5 系列先前為外推值。
 
 ### 修正
+- **spec 宣稱 M5 為外推值**，實際已換成 Geekbench 6 實測；並移除「新增世代要同時
+  改前後端兩處」的舊指示——兩處早已合併為單一 `CHIP_BENCHMARKS`。
+- **移除 `.env.example` 中無人讀取的 `API_HOST` / `API_PORT`**。
 - **PTT 以「25k」形式標示的售價全部抽不到**。regex 裡有一個**實體倒退字元**（0x08）
   佔據了原本應為 `` 的位置，該樣式永遠不可能匹配。由 linter 掃出。
 - **年份改用台灣時區計算**。伺服器跑在 UTC，跨年時會與台灣差一年，

@@ -45,11 +45,11 @@ Discord 警報門檻的兩側——網頁顯示「優秀」卻永不推播，或
 
 #### 6.X.3 基準分維護
 
-- `CHIP_BENCHMARKS` 為專案內部的相對尺度（近似 Geekbench 6 多核），不是精確測值。
-- **M5 系列（`M5` / `M5 Pro` / `M5 Max`）目前為外推值**，依世代間約 +17% 的趨勢推得，
-  已在程式碼中明確標註。取得實測數據後應替換。
-- 新增世代時必須**同時**更新兩處，否則 Dashboard 與後端評分不一致：
-  1. `src/utils/benchmark_db.py` — 後端評分
-  2. `src/dashboard.py` 的 `_BENCH` — 前端即時重算
+- `CHIP_BENCHMARKS` 全表取自 **Geekbench 6 多核心**，來源逐條標註於
+  `src/utils/benchmark_db.py`。**同一來源是硬性要求**：混用跑分平台會讓分數之間
+  不可比較，連帶讓 VFM 失去意義。
+- M5 系列已改為實測值（M5 17,933／M5 Pro 28,436／M5 Max 29,233），不再是外推。
+- 新增世代只需改 `src/utils/benchmark_db.py` 一處。`src/dashboard.py` 的 `_BENCH`
+  直接指向同一個 dict，前端即時重算與後端評分不可能再漂移。
 - 查無晶片時 `get_benchmark()` 回傳 5000（極低分），物件仍會顯示但排在末端；
   這與「抽不到晶片就丟棄」是不同層級的行為，不可混淆。

@@ -141,6 +141,26 @@ src/
 
 ---
 
+## 品質關卡
+
+每次 push 與 PR 自動跑三道，任一失敗即擋下（[`.github/workflows/tests.yml`](.github/workflows/tests.yml)）：
+
+```bash
+ruff check .                  # linter，規則經篩選，見 ruff.toml
+python scripts/check_docs.py  # 文件與程式碼是否還說同一件事
+pytest tests/                 # 107 項
+```
+
+**測試套件刻意不吃 API 金鑰、也不連資料庫。** 這條限制不是為了方便，是它逼著
+純運算（規格抽取、晶片判定、VFM、瑕疵偵測、下架判定）與 I/O 分離——能離線測的
+邏輯才是真的獨立。
+
+文件檢查驗四件事：env 變數兩邊對得上、Markdown 連結指得到檔案、CLAUDE.md 宣稱
+已寫的 spec 真的存在、以及 spec 裡引用的評分常數與 `score_engine.py` 一致。
+最後一項最要緊——讀者是照那張表判斷分數合不合理的。
+
+---
+
 ## 已知問題
 
 - **蝦皮無法完全自動化**：需住宅 IP，且會週期性要求手動通過驗證碼。
