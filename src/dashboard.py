@@ -4,7 +4,6 @@ from html import escape
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 # One list, used by the sidebar options, the defaults and the reset button.
@@ -33,6 +32,7 @@ if _db_url:
     os.environ["DATABASE_URL"] = _db_url
 
 from src.calculator.score_engine import (
+    DEPRECIATION_RATE,
     FAMILY_INCHES,
     RAM_BONUS_THRESHOLD_GB,
     SSD_BONUS_THRESHOLD_GB,
@@ -74,6 +74,32 @@ def _nan_safe(val, default):
     except (TypeError, ValueError):
         pass
     return val or default
+
+
+def _model_label(row: dict) -> str:
+    """What the listing is, as the pipeline understands it.
+
+    Seller titles bury the model inside shop names, coupon slogans and stock
+    codes — 『澄橘』Macbook Air 15 2025 M4 10C10G/16G/256G 午夜 瑕疵機《二手》A87078
+    is one real example. This is the line the reader scans; the seller's own
+    wording stays underneath as the way to check it.
+
+    Every part is optional, because any of them can be missing from a parse,
+    and a label reading "MacBook · None" would be worse than a short one.
+    """
+    series = str(row.get("series") or "").lower()
+    family = "Air" if "air" in series else "Pro" if "pro" in series else ""
+
+    parts = [" ".join(p for p in ("MacBook", family) if p)]
+    # Apple's marketing size, not the measured diagonal. Sellers copy 13, 13.3
+    # and 13.6 for the same machine, and one listing claimed 15.6 — a size
+    # Apple has never made. nominal_inches derives it from the same function
+    # that picks the scoring multiplier, so the two cannot drift.
+    if (inches := nominal_inches(row.get("series"), row.get("screen_size"))):
+        parts[0] += f' {inches}"'
+    if (chip := str(row.get("chip") or "").strip()) and chip.lower() != "none":
+        parts.append(chip)
+    return " · ".join(parts)
 
 
 @st.cache_resource
@@ -342,6 +368,78 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
     .stat--wide { order: 3; flex: 1 1 100%; }
     .vfm-legend { gap: 10px; font-size: 11px; padding-bottom: 10px; }
 }
+
+/* ── Score breakdown ──────────────────────────────────────────────────────
+   The old version squeezed two Markdown tables into a half-width column, so
+   every header split across two lines (晶片基/準), and put a Plotly chart
+   beside them still painted #0e1117 from the dark theme — a black rectangle
+   in the middle of a white page. Plain HTML here, full width, no chart. */
+.vfm-formula {
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--ground);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    margin: 0 0 14px;
+    /* The old st.code block clipped the tail of the formula off the right
+       edge; this wraps instead of hiding the part that matters. */
+    overflow-wrap: anywhere;
+}
+.vfm-lead { font-size: 13px; color: var(--ink-soft); margin: 0 0 4px; }
+.vfm-lead code {
+    font-size: 12px; background: var(--ground);
+    border: 1px solid var(--line); border-radius: 4px; padding: 0 4px;
+}
+.vfm-subject { font-size: 13px; font-weight: 600; color: var(--ink); margin: 8px 0 10px; }
+
+.vfm-table {
+    width: 100%;
+    max-width: 620px;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+.vfm-table td {
+    padding: 9px 4px;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 13.5px;
+    color: var(--ink-soft);
+}
+.vfm-table td.num { text-align: right; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.vfm-table tr.sum td { border-top: 1px solid var(--line); }
+.vfm-table tr.total td {
+    border-bottom: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--ink);
+    padding-top: 12px;
+}
+.vfm-table tr.total td.num { color: var(--good); font-size: 21px; letter-spacing: -0.02em; }
+
+/* A grid rather than a 210px scrolling table. Sorted by score, the only rows
+   ever visible were M5 Max, M5 Pro, M2 Ultra, M4 Max and M1 Ultra — five chips
+   almost nobody is shopping for. */
+.bench-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap: 1px;
+    background: var(--line-soft);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 10px;
+}
+.bench {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--surface);
+    font-size: 12.5px;
+}
+.bench span { color: var(--ink-soft); }
+.bench b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */
 .st-footer {
@@ -633,73 +731,86 @@ st.markdown(f"""
 
 
 # ── Score breakdown expander ───────────────────────────────────────────────────
+# One job: make the score checkable. It used to do four — state the formula,
+# list the rules, chart the current weights, and print the benchmark table —
+# and the first three said the same thing three times over. Worse, the rules
+# table quoted the benchmarks as hand-copied prose ("M1=8500 / M2=10000 ...")
+# which had already fallen behind: neither M5 nor the A18 Pro was in it.
+#
+# What survived is the arithmetic on a real listing. Annotating why each
+# multiplier applied lets it carry the rules as well, so nothing was lost by
+# deleting the table that duplicated them.
 with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
-    col_explain, col_chart = st.columns([1, 1])
+    top = df.iloc[0].to_dict()
+    chip_t = str(top.get("chip") or "")
+    base_t = get_benchmark(chip_t)
+    year_t = int(_nan_safe(top.get("release_year"), current_year()))
+    age_t = max(0, current_year() - year_t)
+    depr_t = depreciation(year_t)
+    ram_t = int(_nan_safe(top.get("ram_gb"), 0))
+    ssd_t = int(_nan_safe(top.get("ssd_gb"), 0))
+    r_t = ram_mult if ram_t >= RAM_BONUS_THRESHOLD_GB else 1.0
+    s_t = ssd_mult if ssd_t >= SSD_BONUS_THRESHOLD_GB else 1.0
+    form_key_t = form_factor_key(top.get("series"), top.get("screen_size"))
+    form_t = weights.form_weight(form_key_t)
+    adj_t = base_t * depr_t * r_t * s_t * form_t
+    price_t = float(top.get("price") or 1)
 
-    with col_explain:
-        st.markdown("#### 計算公式")
-        st.code("VFM = (晶片基準 × 年份折舊 × RAM加成 × SSD加成 × 形態加成) ÷ 售價 × 1000")
-        st.markdown("""
-| 因子 | 規則 |
-|------|------|
-| 晶片基準 | M1=8500 / M2=10000 / M3=11500 / M4=14500（Pro/Max 更高）|
-| 年份折舊 | 每年 ×0.9 |
-| RAM 加成 | ≥16 GB 時套用 RAM 加權（預設×1.25）|
-| SSD 加成 | ≥1 TB 時套用 SSD 加權（預設×1.1）|
-| 形態加成 | Air 13"×1.00 / Air 15"×1.08 / Pro 13"×1.00 / Pro 14"×1.18 / Pro 16"×1.22 |
-""")
-        # Every figure here comes from score_engine, so the breakdown shown to
-        # the reader cannot disagree with the score above it.
-        top = df.iloc[0].to_dict()
-        chip_t = str(top.get("chip") or "")
-        base_t = get_benchmark(chip_t)
-        year_t = int(_nan_safe(top.get("release_year"), current_year()))
-        age_t  = max(0, current_year() - year_t)
-        depr_t = round(depreciation(year_t), 4)
-        r_t    = ram_mult if _nan_safe(top.get("ram_gb"), 0) >= RAM_BONUS_THRESHOLD_GB else 1.0
-        s_t    = ssd_mult if _nan_safe(top.get("ssd_gb"), 0) >= SSD_BONUS_THRESHOLD_GB else 1.0
-        form_t = weights.form_weight(form_factor_key(top.get("series"), top.get("screen_size")))
-        adj_t  = base_t * depr_t * r_t * s_t * form_t
-        price_t = float(top.get("price") or 1)
-        st.markdown(f"**最高分物件分解**（{str(top.get('original_title',''))[:30]}）")
-        st.markdown(f"""
-| 步驟 | 數值 |
-|------|------|
-| 晶片基準（{chip_t}）| {base_t:,} |
-| ×年份折舊（{age_t} 年）| ×{depr_t} |
-| ×RAM 加成 | ×{r_t} |
-| ×SSD 加成 | ×{s_t} |
-| ×形態加成 | ×{form_t} |
-| 調整後分數 | {adj_t:,.0f} |
-| ÷售價 {int(price_t):,} ×1000 | **= {round(adj_t/price_t*1000,2)} 分** |
-""")
+    def _store(gb: int) -> str:
+        return f"{gb // 1024} TB" if gb >= 1024 else f"{gb} GB"
 
-    with col_chart:
-        st.markdown("#### 目前加權設定")
-        factors = ['Air 13"', 'Air 15"', 'Pro 13"', 'Pro 14"', 'Pro 16"', "RAM", "SSD"]
-        values  = [w_air13, w_air15, w_pro13, w_pro14, w_pro16, ram_mult, ssd_mult]
-        colors  = ["#818cf8" if "Air" in f else ("#f472b6" if "Pro" in f else "#4ade80") for f in factors]
-        fig = go.Figure(go.Bar(
-            x=values, y=factors, orientation="h",
-            marker_color=colors,
-            text=[f"×{v:.2f}" for v in values], textposition="outside",
-        ))
-        fig.update_layout(
-            xaxis=dict(range=[0, max(values) * 1.35], showgrid=False, fixedrange=True),
-            yaxis=dict(showgrid=False, fixedrange=True),
-            plot_bgcolor="#0e1117", paper_bgcolor="#0e1117", font_color="#fafafa",
-            margin=dict(l=10, r=70, t=10, b=10), height=300,
-            dragmode=False,
-        )
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-            config={"staticPlot": True, "displayModeBar": False},
-        )
+    # Each row says what the factor is and why it took that value, so the reader
+    # can check the rule and the arithmetic in one pass.
+    steps = [
+        (f"晶片基準　{chip_t}", f"{base_t:,}"),
+        (f"× 年份折舊　{year_t} 年，已 {age_t} 年　每年 ×{1 - DEPRECIATION_RATE:g}", f"×{depr_t:.3f}"),
+        (f"× RAM 加成　{_store(ram_t)}"
+         f"{'　≥' if r_t > 1 else '　<'} {RAM_BONUS_THRESHOLD_GB} GB", f"×{r_t:.2f}"),
+        (f"× SSD 加成　{_store(ssd_t)}"
+         f"{'　≥' if s_t > 1 else '　<'} {SSD_BONUS_THRESHOLD_GB // 1024} TB", f"×{s_t:.2f}"),
+        (f"× 形態加成　{_model_label(top)}", f"×{form_t:.2f}"),
+    ]
+    rows_html = "".join(
+        f'<tr><td>{escape(label)}</td><td class="num">{value}</td></tr>'
+        for label, value in steps
+    )
 
-        st.markdown("#### 晶片基準分參考")
-        bench_df = pd.DataFrame(sorted(_BENCH.items(), key=lambda x: -x[1]), columns=["晶片", "基準分"])
-        st.dataframe(bench_df, use_container_width=True, hide_index=True, height=210)
+    st.markdown(
+        f'''
+<div class="vfm-calc">
+  <p class="vfm-formula">VFM　=　晶片基準 × 年份折舊 × RAM 加成 × SSD 加成 × 形態加成
+    　÷　售價　×　1000</p>
+  <p class="vfm-lead">以目前榜首為例，數字全部取自左側的評分設定——調整滑桿，這裡跟著變。</p>
+  <p class="vfm-subject">{escape(str(top.get("original_title") or "")[:60])}</p>
+  <table class="vfm-table">
+    {rows_html}
+    <tr class="sum"><td>調整後分數</td><td class="num">{adj_t:,.0f}</td></tr>
+    <tr class="total"><td>÷ 售價 {int(price_t):,} × 1000</td>
+        <td class="num">{adj_t / price_t * 1000:,.0f}</td></tr>
+  </table>
+</div>
+''', unsafe_allow_html=True)
+
+    # Ordered by generation, not by score. Sorting on the number put M5 Max,
+    # M5 Pro, M2 Ultra, M4 Max and M1 Ultra in the visible rows of a 210px
+    # scrolling box — five of the rarest chips, while the M1 to M4 anyone
+    # actually meets were below the fold.
+    def _chip_order(name: str) -> tuple:
+        family = 0 if name.startswith("A") else 1
+        gen = int("".join(c for c in name.split()[0][1:] if c.isdigit()) or 0)
+        tier = {"": 0, "Pro": 1, "Max": 2, "Ultra": 3}.get(name.split(" ", 1)[1] if " " in name else "", 0)
+        return (family, gen, tier)
+
+    cells = "".join(
+        f'<div class="bench"><span>{escape(name)}</span><b>{score:,}</b></div>'
+        for name, score in sorted(CHIP_BENCHMARKS.items(), key=lambda kv: _chip_order(kv[0]))
+    )
+    st.markdown(
+        f'''
+<p class="vfm-lead" style="margin-top:22px">晶片基準分　·　Geekbench 6 多核心，來源標註於
+  <code>src/utils/benchmark_db.py</code>　·　查無晶片時以 {get_benchmark("_unknown_"):,} 計</p>
+<div class="bench-grid">{cells}</div>
+''', unsafe_allow_html=True)
 
 st.markdown("")
 
@@ -732,32 +843,6 @@ def _tier(score: float) -> tuple[str, str]:
     if score >= p50:
         return "var(--mid)", "#A8761F"
     return "var(--low)", "#9E4F55"
-
-
-def _model_label(row: dict) -> str:
-    """What the listing is, as the pipeline understands it.
-
-    Seller titles bury the model inside shop names, coupon slogans and stock
-    codes — 『澄橘』Macbook Air 15 2025 M4 10C10G/16G/256G 午夜 瑕疵機《二手》A87078
-    is one real example. This is the line the reader scans; the seller's own
-    wording stays underneath as the way to check it.
-
-    Every part is optional, because any of them can be missing from a parse,
-    and a label reading "MacBook · None" would be worse than a short one.
-    """
-    series = str(row.get("series") or "").lower()
-    family = "Air" if "air" in series else "Pro" if "pro" in series else ""
-
-    parts = [" ".join(p for p in ("MacBook", family) if p)]
-    # Apple's marketing size, not the measured diagonal. Sellers copy 13, 13.3
-    # and 13.6 for the same machine, and one listing claimed 15.6 — a size
-    # Apple has never made. nominal_inches derives it from the same function
-    # that picks the scoring multiplier, so the two cannot drift.
-    if (inches := nominal_inches(row.get("series"), row.get("screen_size"))):
-        parts[0] += f' {inches}"'
-    if (chip := str(row.get("chip") or "").strip()) and chip.lower() != "none":
-        parts.append(chip)
-    return " · ".join(parts)
 
 
 def _int_or_none(val):

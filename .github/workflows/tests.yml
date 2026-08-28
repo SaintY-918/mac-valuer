@@ -61,7 +61,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pytest pandas numpy plotly pydantic sqlalchemy python-dotenv                       requests streamlit playwright
+          pip install pytest pandas numpy pydantic sqlalchemy python-dotenv                       requests streamlit playwright
           python -m playwright install --with-deps chromium
 
       # Seeds its own SQLite fixture and runs the real entrypoint against it,

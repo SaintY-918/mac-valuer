@@ -12,5 +12,4 @@ sqlalchemy
 fastapi
 uvicorn
 requests
-plotly
 psycopg2-binary
