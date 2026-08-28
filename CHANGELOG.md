@@ -37,6 +37,10 @@
 - 規格文件：`scraper`、`api`、`llm-parser`、`score-engine`。
 
 ### 變更
+- **旋轉拍賣改在本機執行**，CI 只跑 PTT。Carousell 對 GitHub runner 的每個請求都是 403
+  （五種標頭 × 五個路徑，僅 `robots.txt` 通過），留在 CI 只會每晚發一則假失敗。
+- `run_local_shopee.ps1` → `run_local_scrape.ps1`，來源改由 `-Sources` 參數決定；
+  排程工作更名為 `mac-valuer-scrape`，安裝腳本會自動移除舊的註冊。
 - **移除死程式碼**：`src/processor/`（無人呼叫）、`src/parser/scraper.py`（已被取代的殘留）、
   `main.py: _is_invalid_chip()`。
 - **Dashboard 改用 SainTech Design System**，並改為一列一筆的響應式卡片，

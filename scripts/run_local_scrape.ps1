@@ -11,13 +11,13 @@
 # comment and the registered task had already drifted apart.
 #
 #   .\scripts\install_schedule.ps1              # install or update the task
-#   Start-ScheduledTask -TaskName "mac-valuer-shopee"   # run it now
+#   Start-ScheduledTask -TaskName "mac-valuer-scrape"   # run it now
 
 param(
     # Comma-separated, in the order they should run. Put the cheap reliable
     # source first: the task is capped at one hour, and Shopee's browser path
     # is the one that can hang.
-    [string]$Sources = "shopee"
+    [string]$Sources = "carousell,shopee"
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,14 +27,14 @@ Set-Location $RepoRoot
 
 $LogDir = Join-Path $RepoRoot "logs"
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
-$LogFile = Join-Path $LogDir ("shopee_" + (Get-Date -Format "yyyy-MM-dd") + ".log")
+$LogFile = Join-Path $LogDir ("scrape_" + (Get-Date -Format "yyyy-MM-dd") + ".log")
 
 function Write-Log($msg) {
     $line = "[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $msg
     Add-Content -Path $LogFile -Value $line -Encoding utf8
 }
 
-Write-Log "=== run_local_shopee start (sources: $Sources) ==="
+Write-Log "=== run_local_scrape start (sources: $Sources) ==="
 
 # The session must already exist. Without it a headless run raises
 # ShopeeSessionExpired, which now reaches Discord as an explicit failure.
@@ -72,5 +72,5 @@ $ErrorActionPreference = "Continue"
 $code = $LASTEXITCODE
 $ErrorActionPreference = $prevEAP
 
-Write-Log "=== run_local_shopee finished with exit code $code ==="
+Write-Log "=== run_local_scrape finished with exit code $code ==="
 exit $code

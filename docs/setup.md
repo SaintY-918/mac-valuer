@@ -49,18 +49,18 @@ python -m src.scripts.check_db
 
 ```
 GitHub Actions（每日 UTC 18:00 ＝ 台灣 02:00）
-  └─ python -m src.main --source ptt,carousell
+  └─ python -m src.main --source ptt
        └─ 寫入 ─┐
                 ├─► Neon PostgreSQL（免費 0.5 GB）
 本機 Windows 排程 ┘                    ▲
-  └─ scripts/run_local_shopee.ps1      │
-       └─ python -m src.main --source shopee
+  └─ scripts/run_local_scrape.ps1      │
+       └─ python -m src.main --source carousell,shopee
                                        │
               Streamlit Community Cloud（免費、公開）
               直連 DBManager，不經過 FastAPI
 ```
 
-### 為什麼蝦皮要分開跑
+### 為什麼蝦皮與旋轉拍賣要分開跑
 
 **蝦皮的瀏覽器爬蟲無法在 GitHub Actions 上運作。** 三個原因裡有兩個其實可解：
 
@@ -74,6 +74,13 @@ GitHub Actions（每日 UTC 18:00 ＝ 台灣 02:00）
 `shopee.tw/verify/captcha?...&scene=crawler_item`。**換一台免費的機房主機只是換一個會被擋的 IP。**
 
 詳見 [`docs/decisions.md`](decisions.md) 第 1 則。
+
+**旋轉拍賣同理，但原因更單純。** 它是純 HTTP、伺服器端渲染，一度被認為可以在 CI 跑——
+實際上 runner 的每一個請求都是 403，五種標頭、五個路徑，只有 `robots.txt` 通得過。
+同樣的請求從住宅 IP 全部 200。那是針對資料中心 IP 的封鎖政策，不是渲染方式的問題。
+
+量測方式保留在 [`src/scripts/probe_carousell.py`](../src/scripts/probe_carousell.py)
+與 `Carousell probe` workflow，日後想確認封鎖是否解除，執行一次即可，不必重新推理。
 
 ### 步驟
 
@@ -164,12 +171,12 @@ $env:SHOPEE_HEADLESS="false"    # 開瀏覽器登入蝦皮一次
 .\venv\Scripts\python.exe -m src.main --source shopee
 
 .\scripts\install_schedule.ps1  # 註冊每日排程
-Start-ScheduledTask -TaskName "mac-valuer-shopee"   # 立刻驗證一次
+Start-ScheduledTask -TaskName "mac-valuer-scrape"   # 立刻驗證一次
 ```
 
 **資料不用搬。** 資料庫在 Neon，Dashboard 在 Streamlit Cloud，兩者都跟這台機器無關；
 舊電腦的排程停掉（`.\scripts\install_schedule.ps1 -Uninstall`）就好。
 
 **排程設定不要用手改。** 它由 `install_schedule.ps1` 定義。設定曾經寫在
-`run_local_shopee.ps1` 的檔頭註解裡、要人照著重打，結果註解和實際註冊的內容就
+`run_local_shopee.ps1`（現已更名）的檔頭註解裡、要人照著重打，結果註解和實際註冊的內容就
 真的不一樣了——這種漂移不會有任何東西報錯。

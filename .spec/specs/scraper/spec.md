@@ -22,7 +22,7 @@
 
     `scene=crawler_item` 是蝦皮反爬系統對請求的分類標記。session 有效卻仍被攔，
     表示攔截依據是**執行環境（IP 段）**而非憑證。瀏覽器路徑必須在住宅或行動網路
-    下執行（`scripts/run_local_shopee.ps1`）。
+    下執行（`scripts/run_local_scrape.ps1`）。
 
     需要重新驗證時（例如蝦皮政策改變）可手動觸發該 workflow，它不寫入資料庫。
 - **搜尋策略**：

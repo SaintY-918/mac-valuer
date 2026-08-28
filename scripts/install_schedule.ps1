@@ -19,11 +19,13 @@
 
 [CmdletBinding()]
 param(
-    [string]$TaskName = "mac-valuer-shopee",
+    [string]$TaskName = "mac-valuer-scrape",
     [string]$At       = "02:30",
-    # Which scrapers the run should fetch. Carousell belongs here rather than in
-    # CI for the same reason Shopee does.
-    [string]$Sources  = "shopee",
+    # Which scrapers the run should fetch. Both of these refuse datacenter IPs,
+    # so CI cannot reach either; Carousell first because it is plain HTTP and
+    # finishes in a minute, and the task is capped at an hour that Shopee's
+    # browser path could otherwise consume.
+    [string]$Sources  = "carousell,shopee",
     [switch]$Uninstall
 )
 
@@ -62,7 +64,16 @@ if ($problems) {
 }
 
 # ── The task ──────────────────────────────────────────────────────────────────
-$scriptPath = Join-Path $RepoRoot "scripts\run_local_shopee.ps1"
+$scriptPath = Join-Path $RepoRoot "scripts\run_local_scrape.ps1"
+
+# The task was called mac-valuer-shopee while Shopee was the only source it
+# fetched. Remove the old registration so renaming does not leave a second task
+# behind, pointing at a script that no longer exists.
+$legacy = Get-ScheduledTask -TaskName "mac-valuer-shopee" -ErrorAction SilentlyContinue
+if ($legacy -and $TaskName -ne "mac-valuer-shopee") {
+    Unregister-ScheduledTask -TaskName "mac-valuer-shopee" -Confirm:$false
+    Write-Host "Removed the old 'mac-valuer-shopee' task (renamed to '$TaskName')."
+}
 
 # -WindowStyle Hidden: with a visible console the run can be ended by closing
 # the window, which is what happened on 2026-08-27 and 2026-08-28 -- both runs
@@ -90,4 +101,4 @@ Write-Host "Registered '$TaskName': daily at $At, sources = $Sources"
 Write-Host ""
 Write-Host "  Start-ScheduledTask   -TaskName '$TaskName'   # run it now"
 Write-Host "  Get-ScheduledTaskInfo -TaskName '$TaskName'   # last result, next run"
-Write-Host "  Get-Content '$RepoRoot\logs\shopee_$(Get-Date -Format yyyy-MM-dd).log' -Tail 20"
+Write-Host "  Get-Content '$RepoRoot\logs\scrape_$(Get-Date -Format yyyy-MM-dd).log' -Tail 20"

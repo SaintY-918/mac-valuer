@@ -22,21 +22,29 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      # PTT and Carousell always run here: both are plain HTTP against
-      # server-rendered pages with no anti-bot wall. Shopee's browser path
-      # cannot work on a runner — measured, see README — so Shopee joins only
-      # when affiliate API credentials make it signed HTTP instead.
+      # PTT is the only source a runner can reach. Shopee and Carousell both
+      # refuse datacenter IPs — measured for each, see docs/decisions.md — and
+      # they run from a residential machine instead (scripts/install_schedule.ps1).
+      #
+      # Carousell used to run here on the theory that plain HTTP against
+      # server-rendered pages meant no anti-bot wall. It 403s every request from
+      # a runner except robots.txt, which is a deliberate bot policy, not a
+      # rendering problem. Leaving it in reported a failure every single night,
+      # and an alert that always fires teaches you to ignore the alert.
+      #
+      # Shopee rejoins here once affiliate API credentials make it signed HTTP
+      # rather than a browser.
       - name: Decide which sources to scrape
         id: sources
         env:
           SHOPEE_APP_ID: ${{ secrets.SHOPEE_APP_ID }}
         run: |
           if [ -n "$SHOPEE_APP_ID" ]; then
-            echo "value=all" >> "$GITHUB_OUTPUT"
-            echo "Shopee affiliate credentials found -> ptt + shopee + carousell"
+            echo "value=ptt,shopee" >> "$GITHUB_OUTPUT"
+            echo "Shopee affiliate credentials found -> ptt + shopee"
           else
-            echo "value=ptt,carousell" >> "$GITHUB_OUTPUT"
-            echo "No Shopee affiliate credentials -> ptt + carousell"
+            echo "value=ptt" >> "$GITHUB_OUTPUT"
+            echo "No Shopee affiliate credentials -> ptt only"
           fi
 
       - name: Run scraper pipeline

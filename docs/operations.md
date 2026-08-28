@@ -131,6 +131,6 @@ python -m src.scripts.export_shopee_session --clip   # 直接複製到剪貼簿
 | `ModuleNotFoundError: No module named 'pandas'` | 用了系統 Python，要用 `.\venv\Scripts\python.exe` |
 | `ModuleNotFoundError: No module named 'src'` | 不在專案根目錄，或直接跑了 `src/dashboard.py` |
 | Discord 顯示 ⛔ 某來源失敗 | 訊息裡有失敗原因；蝦皮多半是 session 過期 |
-| 排程 `LastTaskResult` 非 0 | 看 `logs/shopee_YYYY-MM-DD.log` |
+| 排程 `LastTaskResult` 非 0 | 看 `logs/scrape_YYYY-MM-DD.log` |
 | Neon 連線 timeout | 網路可能擋 5432 埠，換行動網路測試 |
 | Dashboard 顯示舊版 | Streamlit Cloud 快取，用無痕視窗開 |
