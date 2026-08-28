@@ -3,11 +3,23 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+# Configurations Apple actually ships. Kept here rather than inside the parser
+# because they are facts about the hardware, and both the parser and the
+# dashboard's filters need them — the filter lists had drifted, stopping at
+# 64 GB and 2 TB while the parser already accepted 128 GB and 8 TB.
+VALID_RAM_GB = (8, 16, 18, 24, 32, 36, 48, 64, 96, 128)
+VALID_SSD_GB = (128, 256, 512, 1024, 2048, 4096, 8192)
+
 
 class ModelSeries(str, Enum):
     AIR = "Air"
     PRO_13 = "Pro 13"
     PRO_14_16 = "Pro 14/16"
+    # The MacBook Neo (March 2026) is neither an Air nor a Pro. Without a value
+    # here the parser cannot describe one at all: pydantic rejects anything
+    # outside the enum, so a Neo came back with no series and fell through the
+    # form-factor default.
+    NEO = "Neo"
 
     # No weight property here. Scoring multipliers live in ScoringWeights
     # (src/calculator/score_engine.py) and nowhere else — this class once

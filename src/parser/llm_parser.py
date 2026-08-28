@@ -10,7 +10,12 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from src.models.mac_spec import MacBookSpec, ModelSeries
+from src.models.mac_spec import (
+    VALID_RAM_GB,
+    VALID_SSD_GB,
+    MacBookSpec,
+    ModelSeries,
+)
 from src.parser.text_extractor import (
     extract_location,
     extract_price,
@@ -148,8 +153,8 @@ def extract_screen_size_from_text(text: str) -> Optional[float]:
 # Configurations Apple has actually shipped. Anything outside these is a
 # misread, not an exotic build — validating against them is what stops a GPU
 # core count becoming a RAM size.
-_VALID_RAM = {8, 16, 18, 24, 32, 36, 48, 64, 96, 128}
-_VALID_SSD = {128, 256, 512, 1024, 2048, 4096, 8192}
+_VALID_RAM = set(VALID_RAM_GB)
+_VALID_SSD = set(VALID_SSD_GB)
 
 # "8C10G", "10C/10G" are CPU/GPU core counts. Left in place they read as
 # 10 GB RAM and an 8 TB SSD — a real listing was stored that way, and the

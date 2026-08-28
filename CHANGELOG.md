@@ -8,6 +8,7 @@
 ## [未發布]
 
 ### 新增
+- 頁尾新增 GitHub 原始碼連結。
 - **`src/scripts/revalidate_chips.py`**：以現行規則重新檢驗已存的晶片，
   清掉不再通過的（例如被誤判為 Apple M5 的 2016 年 Intel 機）。
 - **`scripts/install_schedule.ps1`**：本機排程改由腳本定義而非檔頭註解。
@@ -63,6 +64,11 @@
 - **晶片基準分改用實測 Geekbench 6 多核並標註來源**；M5 系列先前為外推值。
 
 ### 修正
+- **篩選器少了 MacBook Neo**。`ModelSeries` 沒有這個值，pydantic 會拒絕，
+  所以解析器根本無法描述一台 Neo。已加入 enum、篩選選單與查詢對照表。
+- **RAM／SSD 篩選上限過低**（64 GB／2 TB），而解析器早已接受 128 GB／8 TB。
+  兩份清單改為由 `mac_spec.VALID_RAM_GB` / `VALID_SSD_GB` 推導。
+- **兩處「資料來源」都漏了旋轉拍賣**。改為由 `SOURCE_LABELS` 推導。
 - **螢幕尺寸顯示不一致**：同一種機型會寫成 13 / 13.3 / 13.6，資料中甚至有 Apple
   從未出過的 15.6 吋。改由 `nominal_inches()` 統一為 13 / 14 / 15 / 16，
   且與計分用的形態加成同源。

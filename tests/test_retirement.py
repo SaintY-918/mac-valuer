@@ -8,11 +8,14 @@ completely disjoint sets (35 products vs 30, zero overlap), and the set-based
 sweep marked 46 live listings unavailable in one go.
 """
 
+import json
 import os
 import tempfile
 from datetime import datetime, timedelta, timezone
 
 import pytest
+
+from src.database.db_manager import DBManager
 
 
 @pytest.fixture
@@ -20,7 +23,6 @@ def db():
     """A throwaway SQLite database. Tests must never touch the real one."""
     tmp = tempfile.mkdtemp()
     os.environ["DATABASE_URL"] = f"sqlite:///{tmp}/test.db".replace("\\", "/")
-    from src.database.db_manager import DBManager
     yield DBManager()
 
 
@@ -85,3 +87,46 @@ def test_source_returns_only_its_own_rows(db):
     _add(db, "a", "carousell", "available", 0)
     rows = db.get_filtered_deals(status="available", source="carousell")
     assert all(r.get("source") == "carousell" for r in rows)
+
+
+# ── model_type filter ────────────────────────────────────────────────────────
+# The Neo is neither an Air nor a Pro. It was absent from both the enum and the
+# filter, so a listing for one could not be described or found.
+
+def _seed(tmp_path, rows):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.db_manager import Base, Deal
+
+    url = f"sqlite:///{(tmp_path / 'm.db').as_posix()}"
+    engine = create_engine(url)
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine)() as s:
+        for i, series in enumerate(rows):
+            s.add(Deal(url=f"u{i}", source="ptt", title=f"t{i}", status="available",
+                       parsed_json=json.dumps({"series": series, "price": 30000})))
+        s.commit()
+    engine.dispose()
+    os.environ["DATABASE_URL"] = url
+    return DBManager()
+
+
+@pytest.mark.parametrize("model_type,expected", [
+    ("Air", 1),
+    ("Pro", 2),      # Pro 13 and Pro 14/16 both count
+    ("Neo", 1),
+    (None, 4),       # no filter
+])
+def test_model_type_filter_covers_every_family(tmp_path, model_type, expected):
+    db = _seed(tmp_path, ["Air", "Pro 13", "Pro 14/16", "Neo"])
+    assert len(db.get_filtered_deals(status="available", model_type=model_type)) == expected
+
+
+def test_every_series_the_parser_can_produce_is_filterable(tmp_path):
+    """The enum and the filter map have to stay in step; a family in one and
+    not the other is invisible rather than broken, which is worse."""
+    from src.database.db_manager import _MODEL_TYPE_SERIES
+    from src.models.mac_spec import ModelSeries
+    covered = {s for group in _MODEL_TYPE_SERIES.values() for s in group}
+    assert {m.value for m in ModelSeries} == covered

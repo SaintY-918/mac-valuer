@@ -43,6 +43,7 @@ from src.calculator.score_engine import (
     vfm_from_mapping,
 )
 from src.database.db_manager import DBManager
+from src.models.mac_spec import VALID_RAM_GB, VALID_SSD_GB
 from src.parser.condition_flags import defects_for
 from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark
 
@@ -420,20 +421,23 @@ with st.sidebar:
 
     model_type = st.selectbox(
         "機型",
-        [None, "Air", "Pro"],
+        [None, "Air", "Pro", "Neo"],
         format_func=lambda x: "不限" if x is None else f"MacBook {x}",
         key="model_type",
     )
     chip_input = st.text_input("晶片型號（模糊）", placeholder="例如：M3", key="chip_input")
     ram_gb = st.selectbox(
         "RAM 大小",
-        [None, 8, 16, 18, 24, 32, 36, 48, 64],
+        # Derived, not retyped. These lists stopped at 64 GB and 2 TB while the
+        # parser already accepted 128 GB and 8 TB, so the newest and priciest
+        # machines could not be filtered for at all.
+        [None, *VALID_RAM_GB],
         format_func=lambda x: "不限" if x is None else f"{x} GB",
         key="ram_gb",
     )
     ssd_gb_filter = st.selectbox(
         "SSD 大小",
-        [None, 256, 512, 1024, 2048],
+        [None, *VALID_SSD_GB],
         format_func=lambda x: "不限" if x is None else (f"{x} GB" if x < 1000 else f"{x // 1024} TB"),
         key="ssd_gb_filter",
     )
@@ -500,7 +504,10 @@ with st.sidebar:
     except Exception:
         st.sidebar.caption("🔄 資料庫最後更新時間：無法讀取")
 
-    st.sidebar.caption("資料來源：PTT MacShop　｜　蝦皮")
+    # Derived from SOURCE_LABELS. Two hand-written copies of this list had both
+    # been left behind when Carousell was added — exactly what the note at the
+    # top of this file says must not happen.
+    st.sidebar.caption("資料來源：" + "　｜　".join(SOURCE_LABELS[s] for s in SOURCES))
 
 # ── Fetch from DB (direct, no FastAPI required) ────────────────────────────────
 # The sliders write straight into the shared weight model, so the page and the
@@ -865,14 +872,19 @@ _ARROW_SVG = (
     '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
     'stroke-width="2.5" stroke-linecap="square"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>'
 )
+_REPO_URL = "https://github.com/SaintY-918/mac-valuer"
+
 _link_html = (
     f'<a href="{escape(_SAINTECH_URL, quote=True)}" target="_blank" rel="noopener">'
     f'SainTech 頻道{_ARROW_SVG}</a>'
     if _SAINTECH_URL else ""
+) + (
+    f'<a href="{_REPO_URL}" target="_blank" rel="noopener">'
+    f'原始碼 GitHub{_ARROW_SVG}</a>'
 )
 st.markdown(
     f'<div class="st-footer">'
-    f'<div>資料來源　PTT MacShop · 蝦皮購物</div>'
+    f'<div>資料來源　{escape(" · ".join(SOURCE_LABELS[s] for s in SOURCES))}</div>'
     f'{_link_html}'
     f'</div>',
     unsafe_allow_html=True,

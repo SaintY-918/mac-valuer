@@ -30,6 +30,16 @@ class Deal(Base):
     last_alerted_price = Column(Integer) # last price for which a notifier alert was sent
 
 
+# What each filter value in the sidebar accepts. A mapping rather than a chain
+# of ifs, so adding a family means adding a line here — the Neo was missing
+# from the chain and could not be filtered for at all.
+_MODEL_TYPE_SERIES = {
+    "Air": ("Air",),
+    "Pro": ("Pro 13", "Pro 14/16"),
+    "Neo": ("Neo",),
+}
+
+
 class DBManager:
     def __init__(self):
         db_url = os.getenv("DATABASE_URL", "sqlite:///./mac_deals.db")
@@ -277,9 +287,7 @@ class DBManager:
                     continue
                 if chip is not None and chip.lower() not in str(item.get("chip", "")).lower():
                     continue
-                if model_type == "Air" and item.get("series") != "Air":
-                    continue
-                if model_type == "Pro" and item.get("series") not in ["Pro 13", "Pro 14/16"]:
+                if model_type and item.get("series") not in _MODEL_TYPE_SERIES.get(model_type, ()):
                     continue
                 if screen_size is not None:
                     ss = item.get("screen_size")
