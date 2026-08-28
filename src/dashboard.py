@@ -354,6 +354,33 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
 .st-footer a { color: var(--accent); text-decoration: none; }
 .st-footer a:hover { text-decoration: underline; }
 
+/* ── Sidebar affordance ───────────────────────────────────────────────────
+   Collapsed, the sidebar leaves only a chevron, and nothing says the filters
+   are behind it. Streamlit has no option for labelling it, so the label is
+   attached to the control itself — it exists only while the sidebar is shut,
+   which is exactly when it is needed. */
+[data-testid="stExpandSidebarButton"] {
+    width: auto !important;
+    padding: 0 10px 0 6px !important;
+    display: inline-flex !important;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--line) !important;
+    border-radius: var(--radius) !important;
+    background: var(--surface) !important;
+    color: var(--ink-soft) !important;
+}
+[data-testid="stExpandSidebarButton"]::after {
+    content: "篩選條件";
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+[data-testid="stExpandSidebarButton"]:hover {
+    border-color: var(--accent) !important;
+    color: var(--accent) !important;
+}
+
 /* Keep the pagination row horizontal at every width. */
 [data-testid="stHorizontalBlock"] {
     flex-wrap: nowrap !important;

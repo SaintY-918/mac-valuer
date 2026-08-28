@@ -48,3 +48,16 @@ buttonRadius = "8px"
 [theme.sidebar]
 backgroundColor = "#FFFFFF"
 borderColor     = "#E4E7EC"
+
+[client]
+# Hide the developer toolbar. A visitor who is not the owner sees only the ⋮
+# menu — Rerun, Settings, Print, Record a screencast — none of which does
+# anything for someone reading a price list. "minimal" keeps it out of sight
+# and still surfaces the toolbar when there is something to say, such as an
+# error or a run in progress.
+#
+# Checked against the deployed app while logged out: Share, the star, the edit
+# pencil and "Manage app" are owner-only chrome and never reach a visitor. The
+# Streamlit badge in the bottom corner is Community Cloud's attribution and
+# stays — it is what the free hosting costs.
+toolbarMode = "minimal"

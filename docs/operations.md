@@ -134,3 +134,25 @@ python -m src.scripts.export_shopee_session --clip   # 直接複製到剪貼簿
 | 排程 `LastTaskResult` 非 0 | 看 `logs/scrape_YYYY-MM-DD.log` |
 | Neon 連線 timeout | 網路可能擋 5432 埠，換行動網路測試 |
 | Dashboard 顯示舊版 | Streamlit Cloud 快取，用無痕視窗開 |
+
+---
+
+## Streamlit Cloud 上訪客實際看得到什麼
+
+實測方式：用未登入的瀏覽器開 [mac-valuer.streamlit.app](https://mac-valuer.streamlit.app)，
+而不是憑印象判斷。
+
+| 元件 | 擁有者 | 訪客 |
+|---|---|---|
+| Share、星號、編輯鉛筆 | ✅ | ❌ |
+| 右下 **Manage app** | ✅ | ❌ |
+| **Deploy** 按鈕 | ✅（本機亦有） | ❌ |
+| 右上 **⋮** 選單 | ✅ | ✅ → 已用 `toolbarMode = "minimal"` 關閉 |
+| 右下角 Streamlit 徽章 | ✅ | ✅（無法用設定關閉） |
+
+那個徽章是 Community Cloud 的標示，**留著**——免費代管的代價。
+
+**側邊欄預設是展開的**（桌機）。手機寬度會自動收合，而且任何人手動收合後，
+該瀏覽器會記住這個狀態。收合時只剩一個箭頭符號，所以加了「篩選條件」標籤——
+Streamlit 沒有對應設定，標籤是用 CSS 掛在 `[data-testid="stExpandSidebarButton"]` 上的，
+只在收合時存在，正是需要它的時候。
