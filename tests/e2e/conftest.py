@@ -17,6 +17,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -124,6 +125,9 @@ LISTINGS = [
 
 DEFECT_URLS = {row["url"] for row in LISTINGS if row.get("defect")}
 
+# Three per page turns nine fixture listings into three pages.
+PAGE_SIZE = 3
+
 
 @pytest.fixture(scope="session")
 def seeded_db(tmp_path_factory) -> str:
@@ -179,8 +183,8 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="session")
-def dashboard_url(seeded_db) -> str:
+@contextmanager
+def _serve(seeded_db: str, extra_env: dict | None = None):
     """Run the real entrypoint against the fixture database."""
     port = _free_port()
     env = {
@@ -191,12 +195,14 @@ def dashboard_url(seeded_db) -> str:
         "GEMINI_API_KEY": "",
         "DISCORD_WEBHOOK_URL": "",
         "PYTHONIOENCODING": "utf-8",
+        **(extra_env or {}),
     }
     # Streamlit's output goes to a file, not a pipe. Nothing here drains a
     # pipe, so once the OS buffer filled the server would block mid-write and
     # stop serving — which is exactly what happened: the first few page loads
     # worked and every one after that timed out.
-    log_path = Path(seeded_db.replace("sqlite:///", "")).parent / "streamlit.log"
+    log_path = (Path(seeded_db.replace("sqlite:///", "")).parent
+                / f"streamlit-{port}.log")
     log = log_path.open("w", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "-m", "streamlit", "run", "streamlit_app.py",
@@ -226,6 +232,31 @@ def dashboard_url(seeded_db) -> str:
         except subprocess.TimeoutExpired:
             proc.kill()
         log.close()
+
+
+@pytest.fixture(scope="session")
+def dashboard_url(seeded_db):
+    """The default page size, so every fixture listing sits on one page."""
+    with _serve(seeded_db) as url:
+        yield url
+
+
+@pytest.fixture(scope="session")
+def paged_dashboard_url(seeded_db):
+    """A second instance at three per page.
+
+    Paging cannot be exercised on the main one without pushing most of the
+    fixture onto page two, which every other test would then fail to find.
+    """
+    with _serve(seeded_db, {"PAGE_SIZE": str(PAGE_SIZE)}) as url:
+        yield url
+
+
+@pytest.fixture
+def paged_page(browser, paged_dashboard_url):
+    context, pg = _open(browser, paged_dashboard_url)
+    yield pg
+    context.close()
 
 
 @pytest.fixture(scope="session")

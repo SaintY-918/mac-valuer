@@ -19,7 +19,7 @@ import re
 import pytest
 
 from src.calculator.score_engine import ScoringWeights, vfm_from_mapping
-from tests.e2e.conftest import DEFECT_URLS, LISTINGS
+from tests.e2e.conftest import DEFECT_URLS, LISTINGS, PAGE_SIZE
 
 # Widths worth supporting: the narrowest phone still in use, the common modern
 # phone, and a desktop window. 320 is the one that catches fixed-width mistakes.
@@ -166,6 +166,54 @@ def test_card_text_stays_inside_its_card(viewport, width, height):
             .map(el => el.className + ': ' + el.textContent.slice(0, 30));
     })""")
     assert spills == [], f"content spills out of its card at {width}px: {spills}"
+
+
+def _hrefs(page) -> list:
+    return page.eval_on_selector_all(".deal", "els => els.map(e => e.getAttribute('href'))")
+
+
+def test_paging_moves_to_the_next_set_of_listings(paged_page):
+    """下一頁 used to do nothing at all. The page selector was keyed *and* given
+    an index=; a keyed widget restores its stored value and ignores index, so it
+    came back holding the old page and set the state straight back. The click
+    was undone by the widget beside it."""
+    first = _hrefs(paged_page)
+    assert len(first) == PAGE_SIZE
+
+    paged_page.get_by_role("button", name="下一頁").click()
+    paged_page.wait_for_function(
+        "b => { const a = document.querySelector('.deal');"
+        "       return a && a.getAttribute('href') !== b; }",
+        arg=first[0], timeout=30_000,
+    )
+    second = _hrefs(paged_page)
+    assert not set(first) & set(second), "the second page repeats the first"
+
+    paged_page.get_by_role("button", name="上一頁").click()
+    paged_page.wait_for_function(
+        "b => { const a = document.querySelector('.deal');"
+        "       return a && a.getAttribute('href') !== b; }",
+        arg=second[0], timeout=30_000,
+    )
+    assert _hrefs(paged_page) == first
+
+
+def test_the_whole_fixture_is_reachable_by_paging(paged_page):
+    """Every seeded listing appears on exactly one page."""
+    seen = []
+    for _ in range((len(LISTINGS) + PAGE_SIZE - 1) // PAGE_SIZE):
+        seen += _hrefs(paged_page)
+        button = paged_page.get_by_role("button", name="下一頁")
+        if not button.is_enabled():
+            break
+        before = _hrefs(paged_page)[0]
+        button.click()
+        paged_page.wait_for_function(
+            "b => { const a = document.querySelector('.deal');"
+            "       return a && a.getAttribute('href') !== b; }",
+            arg=before, timeout=30_000,
+        )
+    assert sorted(seen) == sorted(row["url"] for row in LISTINGS)
 
 
 def test_page_raises_no_javascript_errors(page):

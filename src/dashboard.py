@@ -107,6 +107,39 @@ def _get_db() -> DBManager:
     return DBManager()
 
 
+# Every rerun used to make four round trips to Neon — filtered listings, the
+# unfiltered baseline, the new-today count and the freshness timestamp — at
+# roughly a second each. Turning a page changes no filter and needs no fresh
+# data, so a click cost four and a half seconds of blur before anything moved,
+# which reads as a broken button rather than a slow one.
+#
+# The data behind these changes once a night, when the scraper runs. Five
+# minutes of cache is far shorter than that and makes paging and slider moves
+# instant, because the arguments have not changed.
+_CACHE_TTL = 300
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def _load_deals(**filters) -> list:
+    return _get_db().get_filtered_deals(**filters)
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def _load_available() -> list:
+    """The unfiltered baseline the verdict bands are cut from."""
+    return _get_db().get_filtered_deals(status="available")
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def _load_new_count() -> int:
+    return _get_db().get_new_count()
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def _load_last_seen():
+    return _get_db().get_last_seen()
+
+
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Mac 好價雷達", page_icon=":material/laptop:", layout="wide")
 
@@ -604,7 +637,7 @@ with st.sidebar:
 
     # ── Data freshness timestamp ───────────────────────────────────────────────
     try:
-        _last_seen = _get_db().get_last_seen()
+        _last_seen = _load_last_seen()
         if _last_seen:
             _tw = _last_seen + timedelta(hours=8)
             st.sidebar.caption(f"🔄 資料庫最後更新時間：{_tw.strftime('%Y-%m-%d %H:%M')}（台灣時間）")
@@ -635,8 +668,7 @@ _source_param = _selected_sources[0] if len(_selected_sources) == 1 else None
 _status_param = "sold" if show_sold else "available"
 
 try:
-    db = _get_db()
-    deals = db.get_filtered_deals(
+    deals = _load_deals(
         status=_status_param,
         chip=chip_input or None,
         ram_gb=ram_gb,
@@ -658,7 +690,7 @@ try:
         deals = [d for d in deals if int(_nan_safe(d.get("ssd_gb"), 0)) == ssd_gb_filter]
 
     # All available deals (unfiltered) for p75/p50 baseline
-    all_available = db.get_filtered_deals(status="available")
+    all_available = _load_available()
 except Exception as exc:
     st.title("Mac 好價雷達")
     st.error(
@@ -701,7 +733,7 @@ st.markdown(f'<div class="st-eyebrow">二手 · {escape(" · ".join(SOURCE_LABEL
 st.title("Mac 好價雷達")
 prices = df["price"].dropna().astype(float)
 try:
-    _new_count = _get_db().get_new_count()
+    _new_count = _load_new_count()
 except Exception:
     _new_count = 0
 _price_range = (
@@ -815,14 +847,19 @@ with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
 st.markdown("")
 
 # ── Pagination state ───────────────────────────────────────────────────────────
-PAGE_SIZE = 20
+# Configurable so the browser tests can page through a small fixture rather than
+# needing twenty-odd seeded listings to reach page two.
+PAGE_SIZE = max(1, int(_read_secret("PAGE_SIZE") or 20))
 
 if "page_num" not in st.session_state:
     st.session_state["page_num"] = 1
 
 max_pages = max(1, (len(df) + PAGE_SIZE - 1) // PAGE_SIZE)
-current_page = int(st.session_state.get("page_num", 1))
-current_page = max(1, min(current_page, max_pages))
+# Clamped back into session_state rather than into a local: the page selector
+# below is keyed on page_num, and a stored value outside its options raises.
+# Narrowing the filters can leave it pointing past the end.
+st.session_state["page_num"] = max(1, min(int(st.session_state["page_num"]), max_pages))
+current_page = st.session_state["page_num"]
 
 
 # ── Deal cards ─────────────────────────────────────────────────────────────────
@@ -941,27 +978,34 @@ st.markdown(f'<div class="deal-list">{_caption}{"".join(deals)}</div>',
 # ── Pagination ─────────────────────────────────────────────────────────────────
 st.markdown("")
 
+def _step_page(delta: int) -> None:
+    """Runs before the rerun, so the selector picks up the new value.
+
+    The selector is keyed on page_num and therefore owns it. Previously it had
+    its own key *and* an index= argument: a keyed widget restores its stored
+    value and ignores index, so after a button set page_num to 2 the selector
+    came back holding 1, decided 1 != 2, and set it straight back. The click
+    was undone by the widget beside it — two reruns, two loading flashes, and
+    the same page.
+    """
+    st.session_state["page_num"] = current_page + delta
+
+
 prev_col, mid_col, next_col = st.columns([2, 3, 2])
 with prev_col:
-    if st.button("← 上一頁", disabled=(current_page <= 1), key="pg_prev", use_container_width=True):
-        st.session_state["page_num"] = current_page - 1
-        st.rerun()
+    st.button("← 上一頁", disabled=(current_page <= 1), key="pg_prev",
+              on_click=_step_page, args=(-1,), use_container_width=True)
 with mid_col:
-    selected_page = st.selectbox(
+    st.selectbox(
         "頁數",
         options=list(range(1, max_pages + 1)),
-        index=current_page - 1,
         label_visibility="collapsed",
-        key="pg_select",
+        key="page_num",
         format_func=lambda p: f"第 {p} / {max_pages} 頁",
     )
-    if selected_page != current_page:
-        st.session_state["page_num"] = selected_page
-        st.rerun()
 with next_col:
-    if st.button("下一頁 →", disabled=(current_page >= max_pages), key="pg_next", use_container_width=True):
-        st.session_state["page_num"] = current_page + 1
-        st.rerun()
+    st.button("下一頁 →", disabled=(current_page >= max_pages), key="pg_next",
+              on_click=_step_page, args=(1,), use_container_width=True)
 st.markdown(
     f"<div style='text-align:center;padding:4px 0;color:var(--ink-faint);"
     f"font-size:12px;'>共 {len(df)} 筆</div>",
