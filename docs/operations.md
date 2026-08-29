@@ -124,6 +124,48 @@ python -m src.scripts.export_shopee_session --clip   # 直接複製到剪貼簿
 
 ---
 
+## 外部服務的額度與限制
+
+本專案完全建構於免費方案，這是刻意的取捨。新增功能前先評估會不會撞到這些上限：
+
+| 服務 | 限制 |
+|---|---|
+| Gemini | 15 RPM / 500 RPD（免費方案 Flash Lite） |
+| Neon | 0.5 GB |
+| Streamlit Cloud | 12 小時無人造訪即休眠；不支援自訂網域 |
+| GitHub Secret | 單筆 48 KB（`SHOPEE_STATE_B64` 因此要 gzip） |
+
+`GEMINI_RPM` 預設 13 而非 15，是刻意留餘裕——貼著上限跑，稍有抖動就會吃到 429。
+
+### 更換 Gemini 模型
+
+模型代號會被汰換，`gemini-3.5-flash-lite` 終將下架，屆時 pipeline 會直接失敗。
+代號沒有寫死在程式裡，改環境變數即可，**不需要動任何程式碼**：
+
+1. 本機改 `.env` 的 `GEMINI_MODEL`
+2. GitHub Actions 改 repository secret 或 workflow 的 `env`
+3. Streamlit Cloud 改 app 設定裡的 secrets
+
+換之前先確認新模型的額度——非 Lite 的 Flash 系列免費方案只有 20 RPD，
+不足以支撐每日全量解析。
+
+---
+
+## 提交前的個資檢查
+
+repo 是公開的，提交出去就收不回來。檢查清單見 [`CLAUDE.md`](../CLAUDE.md)，
+機械式的部分可以用 grep 掃：
+
+```bash
+# 執行前把 <> 換成要搜尋的實際值。
+# 不要把真實 email 或 IP 留在這份文件裡 —— 這份文件本身也是公開的。
+git ls-files | xargs grep -lniE '<你的email>|<內網IP前綴>|<你的使用者名稱>' 2>/dev/null
+```
+
+掃不到不等於乾淨——截圖、日誌貼上前要用眼睛看過。
+
+---
+
 ## 疑難排解
 
 | 症狀 | 原因 |

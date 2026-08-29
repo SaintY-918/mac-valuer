@@ -7,7 +7,27 @@
 
 ## [未發布]
 
-（尚無變更）
+### 變更
+- **`CLAUDE.md` 精簡為「一定要做／一定不能做」**（121 → 89 行）。原本混了規則、
+  背景說明與操作指令三種東西，讀的人分不出哪些是鐵律。額度限制表與個資檢查指令
+  移至 [`docs/operations.md`](docs/operations.md)；spec 對照表格式維持不動，
+  `scripts/check_docs.py` 會解析它。
+- **個資檢查明確涵蓋爬蟲抓到的第三方資料**。賣家的電話不會因為是抓來的就可以公開。
+
+### 新增
+- **`docs/operations.md` 的「更換 Gemini 模型」**。`CLAUDE.md` 原本聲稱此事記載於
+  operations.md，但該段落並不存在——文件互指卻沒有實體，是最難發現的一種文件債。
+- **`docs/operations.md` 的「外部服務的額度與限制」**，含 GitHub Secret 的 48 KB
+  上限（`SHOPEE_STATE_B64` 需 gzip 的原因）。
+
+### 移除
+- **`.claude/` 移出版本控制**。25 個檔案中 24 個是工具的 vendored 設定，不是本專案
+  的內容；`scripts/check_docs.py` 早已將其列入 `DOC_EXCLUDE`。本機檔案保留。
+
+### 修正
+- **decisions #7 的標題仍寫著「待處理」，內文狀態卻是「已修正」**。
+- **decisions #8 改寫為「公開前的資料衛生稽核」**，記錄稽核範圍、發現的分類與
+  處理方式。
 
 ---
 

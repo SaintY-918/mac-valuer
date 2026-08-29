@@ -9,6 +9,7 @@ valuation_report_*.csv
 *.pyc
 
 # AI agent / editor tooling
+.claude/
 .agents/
 openspec/
 skills-lock.json
