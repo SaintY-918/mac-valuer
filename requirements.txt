@@ -3,7 +3,13 @@ google-genai
 playwright
 camoufox
 streamlit
-pandas
+# Pinned, unlike its neighbours: pandas ships unsigned compiled .pyd files,
+# and on 2026-08-29 Windows Smart App Control blocked one of them mid-import,
+# killing the scheduled run five seconds in (decisions #28). An unpinned
+# dependency that can silently change underneath a scheduled task is one the
+# next failure cannot be reasoned about. The pipeline itself no longer
+# imports pandas at all; only the Streamlit dashboard does.
+pandas==3.0.5
 tabulate
 pydantic
 python-dotenv

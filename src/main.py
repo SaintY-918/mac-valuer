@@ -1,4 +1,5 @@
 import asyncio
+import csv
 import hashlib
 import json
 import logging
@@ -6,7 +7,6 @@ import os
 import re
 from collections import defaultdict
 
-import pandas as pd
 from tabulate import tabulate
 
 from src.calculator.score_engine import get_vfm_score
@@ -60,6 +60,19 @@ _CHIP_RE = re.compile(
 # grows into the Gemini free tier's 500-a-day ceiling on its own: at the
 # observed rate roughly 770 rows would have been enough.
 MAX_REPAIR_CALLS = int(os.getenv("MAX_REPAIR_CALLS_PER_RUN", "50"))
+
+
+def _to_number(value) -> float:
+    """What pd.to_numeric(errors="coerce").fillna(0) did, for one value.
+
+    Rows come out of get_all_parsed_deals() as plain dicts loaded from JSON, so
+    a missing or unparseable field is None or a string — never NaN. pandas was
+    manufacturing the NaN itself and then being asked to check for it.
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _parse_input_hash(title: str, body: str) -> str:
@@ -349,16 +362,16 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
     if not all_parsed:
         return
 
-    df = pd.DataFrame(all_parsed)
-    for col in ["ram_gb", "ssd_gb", "screen_size", "release_year", "price"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    for row in all_parsed:
+        for col in ("ram_gb", "ssd_gb", "screen_size", "release_year", "price"):
+            row[col] = _to_number(row.get(col))
 
-    print(f"=== Step 4: Scoring {len(df)} items ===")
+    print(f"=== Step 4: Scoring {len(all_parsed)} items ===")
     final_results = []
-    for _, row in df.iterrows():
+    for row in all_parsed:
         try:
             chip_val = row.get("chip")
-            if pd.isna(chip_val) or not str(chip_val).strip() or str(chip_val).strip() == "None":
+            if chip_val is None or not str(chip_val).strip() or str(chip_val).strip() == "None":
                 continue
             chip = str(chip_val)
 
@@ -367,7 +380,7 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
                 continue
 
             series_val = row.get("series")
-            if pd.isna(series_val) or not str(series_val).strip():
+            if series_val is None or not str(series_val).strip():
                 series_val = "Air"
 
             spec_obj = MacBookSpec(
@@ -441,7 +454,16 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
 
     # Strip private fields before writing the public CSV report.
     public_results = [{k: v for k, v in r.items() if not k.startswith("_")} for r in final_results]
-    pd.DataFrame(public_results).to_csv("valuation_report.csv", index=False, encoding="utf-8-sig")
+    if public_results:
+        # utf-8-sig so Excel opens the Chinese columns without being told to.
+        # Field names are the union across rows, in first-seen order: a row
+        # missing a key would make DictWriter raise, and pandas used to paper
+        # over that by unioning the columns itself.
+        fieldnames = list(dict.fromkeys(k for r in public_results for k in r))
+        with open("valuation_report.csv", "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, restval="")
+            writer.writeheader()
+            writer.writerows(public_results)
     print(tabulate(public_results[:15], headers="keys", tablefmt="fancy_grid"))
     print(f"\nDone. Total items in report: {len(public_results)}")
 
