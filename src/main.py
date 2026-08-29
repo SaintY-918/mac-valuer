@@ -488,4 +488,22 @@ if __name__ == "__main__":
     parser.add_argument("--skip-scrape", action="store_true",
                          help="Skip Step 1 (scraping) and reuse existing DB data — for testing repair/scoring/notifier without hitting network scrapers or LLM quota on new listings.")
     args = parser.parse_args()
-    run_valuation_pipeline(source=args.source, dry_run=args.dry_run, skip_scrape=args.skip_scrape)
+
+    # The heartbeat is Step 7, at the very end of the pipeline. Anything that
+    # aborts before it — a scraper raising past its handler, the database
+    # refusing a connection — sent nothing at all, and a night with no Discord
+    # message is indistinguishable from a night that went fine and was quiet.
+    # Silence has no shape: you cannot set an alert on a message that never came.
+    #
+    # This covers failures inside the pipeline only. A python that cannot finish
+    # importing never reaches this line either, which is why the wrapper in
+    # scripts/run_local_scrape.ps1 reports from outside the process as well.
+    try:
+        run_valuation_pipeline(source=args.source, dry_run=args.dry_run, skip_scrape=args.skip_scrape)
+    except Exception as e:
+        logger.exception("Pipeline aborted before completing")
+        try:
+            send_heartbeat({"fatal": f"{type(e).__name__}: {e}"})
+        except Exception as notify_error:
+            logger.error("Could not report the abort to Discord: %s", notify_error)
+        raise

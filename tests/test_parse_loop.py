@@ -194,3 +194,31 @@ def test_a_source_failure_still_outranks_a_quota_warning():
                               "alerts_sent": 0, "quota_exhausted": "429 ..."})
     assert msg.startswith("⚠️")
     assert "爬取失敗" in msg and "額度用盡" in msg
+
+
+def test_an_aborted_run_is_not_reported_as_a_quiet_night():
+    """A pipeline that died before Step 7 has no summary to give.
+
+    Printing "觸發警報：0 筆" would be true and still read as a normal quiet run,
+    which is the one thing the reader must not conclude.
+    """
+    msg = _heartbeat_content({"fatal": "ImportError: DLL load failed"})
+    assert msg.startswith("⛔")
+    assert "中止" in msg
+    assert "DLL load failed" in msg
+    assert "觸發警報" not in msg
+
+
+def test_an_abort_reports_partial_progress_as_partial():
+    msg = _heartbeat_content({"fatal": "OperationalError: connection refused",
+                              "counts": {"ptt": 3}})
+    assert "中斷前已寫入 **3** 筆" in msg
+    assert "沒有完整結果" in msg
+
+
+def test_an_abort_outranks_every_other_state():
+    """If the run stopped, nothing else about it is the headline."""
+    msg = _heartbeat_content({"fatal": "boom", "counts": {"ptt": 3},
+                              "errors": {"carousell": "403"},
+                              "alerts_sent": 2, "quota_exhausted": "429 ..."})
+    assert msg.startswith("⛔ **每日爬蟲巡邏中止**")

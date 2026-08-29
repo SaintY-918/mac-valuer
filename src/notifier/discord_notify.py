@@ -51,6 +51,19 @@ def _heartbeat_content(stats: dict) -> str:
     errors: dict = stats.get("errors") or {}
     alerts_sent = stats.get("alerts_sent", 0)
 
+    # A run that died partway through is not a patrol summary with a bad number
+    # in it — there is no summary, because the steps that produce one never ran.
+    # Reporting "觸發警報：0 筆" here would be true and still misleading: it reads
+    # as a quiet night rather than as a pipeline that stopped.
+    fatal = stats.get("fatal")
+    if fatal:
+        reason = str(fatal).replace(chr(10), " ")[:180]
+        lines = [f"- 原因：`{reason}`",
+                 "- pipeline 在跑完之前中斷，本次**沒有完整結果**。"]
+        for source in sorted(counts):
+            lines.append(f"- {_label(source)}：中斷前已寫入 **{counts[source]}** 筆")
+        return chr(10).join(["⛔ **每日爬蟲巡邏中止**", *lines])
+
     lines = []
     for source in sorted(set(counts) | set(errors)):
         if source in errors:
