@@ -26,11 +26,11 @@ import feedparser
 import requests
 
 from src.scrapers.base import BaseScraper, RawListing
+from src.utils.chip_extract import mentions_apple_silicon
 
 logger = logging.getLogger(__name__)
 
 _RSS_URL = "https://www.ptt.cc/atom/MacShop.xml"
-_M_CHIPS = ["m1", "m2", "m3", "m4"]
 _EXCLUDE_TITLES = ["徵", "[交換]", "intel", "i5", "i7", "i9", "2017", "2018"]
 _SOLD_KEYWORDS = ["售出", "已售出", "Sold", "sold", "已出"]
 
@@ -136,7 +136,11 @@ class PTTScraper(BaseScraper):
             title_lower = title.lower()
             if any(tag in title for tag in _EXCLUDE_TITLES):
                 continue
-            if not any(chip in title_lower for chip in _M_CHIPS):
+            # Was a literal ["m1", "m2", "m3", "m4"], which silently dropped
+            # every M5 and every A-series machine — the newest and priciest
+            # listings on the board. main.py had already been fixed for exactly
+            # this, twice; the list here was a third copy of the same mistake.
+            if not mentions_apple_silicon(title):
                 continue
             if "macbook" not in title_lower:
                 continue

@@ -204,3 +204,41 @@ def test_an_unreachable_feed_raises_instead_of_looking_like_a_quiet_day(monkeypa
     monkeypatch.setattr("src.scrapers.ptt.feedparser.parse", lambda url: dead)
     with pytest.raises(RuntimeError, match="no entries"):
         _run(PTTScraper().fetch_listings())
+
+
+def test_the_board_filter_no_longer_stops_at_m4(monkeypatch):
+    """_M_CHIPS was ["m1","m2","m3","m4"], so M5 and A-series never got fetched.
+
+    main.py had already been fixed for this twice — once when the extractor's
+    list stopped at M4 and lost nine listings, once when MacBook Neo's A18 Pro
+    was discarded whole. This was the same mistake's third copy, in the one
+    place that decides whether a listing is fetched at all.
+    """
+    entries = [
+        SimpleNamespace(title="[賣機] MacBook Pro M5 Max 16吋", link="https://p/m5"),
+        SimpleNamespace(title="[賣機] MacBook Neo A18 Pro 8G/256G", link="https://p/a18"),
+        SimpleNamespace(title="[賣機] MacBook Air M2 13吋", link="https://p/m2"),
+        SimpleNamespace(title="[徵求] MacBook Air M3", link="https://p/wanted"),
+        SimpleNamespace(title="[賣機] MacBook Pro 2016 Core m5 1.2G", link="https://p/intel"),
+    ]
+    monkeypatch.setattr("src.scrapers.ptt.feedparser.parse",
+                        lambda url: SimpleNamespace(entries=entries))
+
+    scraper = PTTScraper()
+    monkeypatch.setattr(scraper, "_delay", 0)
+    fetched = []
+
+    def _fake_get(url):
+        fetched.append(url)
+        return _ARTICLE
+
+    monkeypatch.setattr(scraper, "_get", _fake_get)
+    _run(scraper.fetch_listings())
+
+    assert "https://p/m5" in fetched
+    assert "https://p/a18" in fetched
+    assert "https://p/m2" in fetched
+    # 徵求 is someone buying, and a Core m5 is an Intel machine this project
+    # cannot score — both still dropped.
+    assert "https://p/wanted" not in fetched
+    assert "https://p/intel" not in fetched

@@ -24,15 +24,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.database.db_manager import DBManager, Deal
-from src.main import _INTEL_MARKERS, _INVALID_CHIPS, APPLE_SILICON_FIRST_YEAR
+from src.utils.chip_extract import APPLE_SILICON_FIRST_YEAR, INTEL_MARKERS, INVALID_CHIPS
 
 
 def _rejection(title: str, parsed: dict) -> str | None:
     """Why this row would be rejected today, or None if it still passes."""
     chip = parsed.get("chip")
-    if chip is None or str(chip).strip().lower() in _INVALID_CHIPS:
+    if chip is None or str(chip).strip().lower() in INVALID_CHIPS:
         return "no chip"
-    if _INTEL_MARKERS.search(title or ""):
+    if INTEL_MARKERS.search(title or ""):
         return f"Intel markers in title (stored chip {chip})"
     year = parsed.get("release_year")
     try:
