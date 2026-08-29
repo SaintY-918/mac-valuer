@@ -9,14 +9,30 @@ No network access here: the scrapers' per-item builders are pure functions over
 the payload each platform returns.
 """
 
+import asyncio
+import concurrent.futures
 import re
+from types import SimpleNamespace
 
 import pytest
 
 from src.scrapers.carousell import CarousellScraper
+from src.scrapers.ptt import PTTScraper, _main_content_text
 from src.scrapers.shopee import ShopeeScraper
 
 PRICE_RE = re.compile(r"售價為 (\d+) 元")
+
+
+def _run(coro):
+    """Drive a coroutine to completion from a sync test.
+
+    Not asyncio.run(): the browser tests hold Playwright's sync API open for the
+    whole session, which keeps an event loop running in this thread, and
+    asyncio.run() refuses to nest inside one. A worker thread has no loop of its
+    own. The failure only appears in a full-suite run, never in this file alone.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 # ── Shopee: building a listing from the search response alone ─────────────────
@@ -132,3 +148,97 @@ def test_enforces_the_price_range(carousell, monkeypatch, price):
 
 def test_a_page_without_the_product_block_is_skipped_not_fatal(carousell, monkeypatch):
     assert _listing(carousell, None, monkeypatch) is None
+
+
+# ── PTT: reading an article without a browser ─────────────────────────────────
+
+# Trimmed from a real MacShop article. The nesting matters: main-content holds
+# metaline divs and push divs, which is why the extractor cannot just match to
+# the first closing tag.
+_ARTICLE = """<html><body><div id="main-container">
+<div id="main-content" class="bbs-screen bbs-content">
+<div class="article-metaline"><span class="article-meta-tag">作者</span><span class="article-meta-value">seller</span></div>
+<div class="article-metaline"><span class="article-meta-tag">標題</span><span class="article-meta-value">[賣機] MacBook Air M3</span></div>
+[讓售] MacBook Air M3 15寸<br>售價 &lt;&lt; 32000 &gt;&gt;<br>
+--<br>※ 發信站: 批踢踢實業坊
+<div class="push"><span class="f3 push-content">: 輸入法</span></div>
+</div></div><script>var x = "</div>";</script></body></html>"""
+
+
+def test_reads_the_article_body_out_of_the_markup():
+    text = _main_content_text(_ARTICLE)
+    assert "MacBook Air M3 15寸" in text
+    assert "<span" not in text and "<div" not in text
+
+
+def test_unescapes_entities_so_the_price_regex_can_see_the_number():
+    """A price written as &lt;&lt; 32000 &gt;&gt; has to survive as << 32000 >>."""
+    assert "<< 32000 >>" in _main_content_text(_ARTICLE)
+
+
+def test_script_contents_never_reach_the_body():
+    """A </div> inside a <script> string would end the body early if trusted."""
+    assert "var x" not in _main_content_text(_ARTICLE)
+
+
+def test_a_page_without_main_content_yields_nothing_rather_than_garbage():
+    assert _main_content_text("<html><body>nope</body></html>") == ""
+
+
+def test_the_signature_separator_still_cuts_the_body(monkeypatch):
+    scraper = PTTScraper()
+    monkeypatch.setattr(scraper, "_get", lambda url: _ARTICLE)
+    body = _run(scraper._body_text("https://www.ptt.cc/bbs/MacShop/M.1.A.2.html"))
+    assert "MacBook Air M3" in body
+    assert "發信站" not in body
+
+
+def test_an_unreachable_feed_raises_instead_of_looking_like_a_quiet_day(monkeypatch):
+    """feedparser reports a network failure as an object with no entries.
+
+    Returning [] there would reach the heartbeat as "0 筆" — indistinguishable
+    from a genuinely quiet board, which is the confusion decisions #21 fixed
+    everywhere else.
+    """
+    dead = SimpleNamespace(entries=[], bozo=1, bozo_exception="connection refused")
+    monkeypatch.setattr("src.scrapers.ptt.feedparser.parse", lambda url: dead)
+    with pytest.raises(RuntimeError, match="no entries"):
+        _run(PTTScraper().fetch_listings())
+
+
+def test_the_board_filter_no_longer_stops_at_m4(monkeypatch):
+    """_M_CHIPS was ["m1","m2","m3","m4"], so M5 and A-series never got fetched.
+
+    main.py had already been fixed for this twice — once when the extractor's
+    list stopped at M4 and lost nine listings, once when MacBook Neo's A18 Pro
+    was discarded whole. This was the same mistake's third copy, in the one
+    place that decides whether a listing is fetched at all.
+    """
+    entries = [
+        SimpleNamespace(title="[賣機] MacBook Pro M5 Max 16吋", link="https://p/m5"),
+        SimpleNamespace(title="[賣機] MacBook Neo A18 Pro 8G/256G", link="https://p/a18"),
+        SimpleNamespace(title="[賣機] MacBook Air M2 13吋", link="https://p/m2"),
+        SimpleNamespace(title="[徵求] MacBook Air M3", link="https://p/wanted"),
+        SimpleNamespace(title="[賣機] MacBook Pro 2016 Core m5 1.2G", link="https://p/intel"),
+    ]
+    monkeypatch.setattr("src.scrapers.ptt.feedparser.parse",
+                        lambda url: SimpleNamespace(entries=entries))
+
+    scraper = PTTScraper()
+    monkeypatch.setattr(scraper, "_delay", 0)
+    fetched = []
+
+    def _fake_get(url):
+        fetched.append(url)
+        return _ARTICLE
+
+    monkeypatch.setattr(scraper, "_get", _fake_get)
+    _run(scraper.fetch_listings())
+
+    assert "https://p/m5" in fetched
+    assert "https://p/a18" in fetched
+    assert "https://p/m2" in fetched
+    # 徵求 is someone buying, and a Core m5 is an Intel machine this project
+    # cannot score — both still dropped.
+    assert "https://p/wanted" not in fetched
+    assert "https://p/intel" not in fetched

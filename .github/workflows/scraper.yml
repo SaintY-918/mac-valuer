@@ -22,6 +22,19 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      # No browser is installed here, and nothing that runs here needs one.
+      #
+      # That was not true between 2026-08-26 and 2026-08-29. ba2d143 deleted the
+      # `playwright install` step because the browser-based Shopee scraper was
+      # leaving CI -- a true reason about the source being removed, never
+      # checked against PTT, the source being kept, which was launching Chromium
+      # for every detail page. Three nights of runs died at browser launch.
+      #
+      # PTT now reads the same pages over plain HTTP, and the Shopee path that
+      # can be promoted below is the signed affiliate API, also plain HTTP. If a
+      # browser-based source is ever added back here, this is the step that has
+      # to come with it.
+
       # PTT is the only source a runner can reach. Shopee and Carousell both
       # refuse datacenter IPs — measured for each, see docs/decisions.md — and
       # they run from a residential machine instead (scripts/install_schedule.ps1).

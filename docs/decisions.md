@@ -787,3 +787,127 @@ limit: 500
 
 兩個都加了瀏覽器測試：翻頁必須換一組物件、回上一頁必須回到原本那組、
 且反覆翻頁要能走遍全部測資。
+
+---
+
+## 28. 通報者不能活在被通報的東西裡面
+
+**日期**：2026-08-29　**狀態**：已實作
+
+**背景**：2026-08-29 10:02:46 排程啟動，10:02:51 死亡，全程五秒，**Discord 一個字都沒有**。
+
+事件記錄檔（`Microsoft-Windows-CodeIntegrity/Operational`）：
+
+```
+Event 3077 / 3033
+process …\Python313\python.exe attempted to load
+  …\venv\Lib\site-packages\pandas\_libs\tslibs\timezones.cp313-win_amd64.pyd
+did not meet the Enterprise signing level requirements
+  (Policy ID:{0283ac0f-fff1-49ae-ada1-8a933130cad6})
+```
+
+該 Policy ID 是**智慧型應用程式控制（Smart App Control）**，本機為強制執行
+（`VerifiedAndReputablePolicyState = 1`）。它封鎖未簽章且雲端信譽查不到的執行檔，
+而 pandas 的 `.pyd` 全部未簽章。
+
+**這不是版本問題**：pandas 3.0.5 於 8/25 安裝，8/26、8/27、8/28 三天都正常執行。
+過去十天的全部 Code Integrity 封鎖事件中，**與 python 有關的只有這一次**
+（同一秒的 3077 + 3033 兩筆）。事後手動 `import pandas` 亦正常。
+結論是**間歇性的信譽查詢失敗**，不是永久封鎖。
+
+而通知之所以完全沒發出，是三層都沒接住：
+
+| 層 | 為什麼沒接住 |
+|---|---|
+| `src/main.py:9` `import pandas` | 死在這裡。通知器在**第 15 行**才 import，模組連載入都沒有 |
+| `send_heartbeat()` | 在 Step 7，`run_valuation_pipeline()` 的最後 |
+| `__main__` | 裸呼叫，沒有 try/except |
+| `run_local_scrape.ps1` | 把 `exit code 1` 寫進 log 然後結束，**沒有任何人讀那個結束碼** |
+
+**決定**：失敗通知改由 PowerShell 包裝層發出，並加上一次條件式重試。
+
+1. **通知從 python 之外送出**。`Send-FailureNotice` 自行讀 `.env` 取得 webhook，
+   附上 log 尾端 12 行。已實測發送成功。
+2. **快速失敗才重試**（`$FastFailSeconds = 300`）。300 秒內死亡代表根本沒啟動——
+   DLL 被擋、session 檔不見、資料庫連不上——重試幾乎免費；二十分鐘後才死代表已經
+   做了很多事，而排程有一小時上限（`install_schedule.ps1`），重試可能被砍在寫入中途。
+3. **`__main__` 補 try/except**，涵蓋 pipeline 內部的致命錯誤。
+   `_heartbeat_content` 新增 `fatal` 分支：中止的執行**不印「觸發警報：0 筆」**——
+   那句話是真的，但讀起來像平靜的一晚。
+
+**理由**：**負責通報的東西不能與被通報的東西同生共死。** 任何由 python 發出的通知，
+在 python 起不來時一定不存在。這是 #21（爬蟲壞掉被顯示成「0 筆」）的更高一層：
+當時的問題是訊息內容指向錯誤的地方，這次是**根本沒有訊息**。
+**沉默沒有形狀——沒有人能對一則從未抵達的訊息設警報。**
+
+**否決**：
+
+- **關掉 Smart App Control**。它是全開或全關，且關閉後需重灌 Windows 才能再啟用；
+  而且它擋的確實是未簽章的二進位檔，關掉是拿整台機器的防護換一個排程的穩定性。
+- **只在 python 端補 try/except**。這是三層裡最容易做的一層，也是唯一涵蓋不了
+  今天這種失敗的一層。單獨做它會製造「已經修好了」的錯覺。
+
+**重新評估**：若 SAC 再擋到其他檔案、或出現重試也救不回的案例，
+300 秒的快速失敗門檻要重新檢視。
+
+---
+
+## 29. 共用步驟不能只用被移除者的理由來刪
+
+**日期**：2026-08-29　**狀態**：已實作
+
+**背景**：Discord 回報 CI 的 PTT 爬取失敗：
+
+```
+BrowserType.launch: Executable doesn't exist at
+  /home/runner/.cache/ms-playwright/chromium_headless_shell-1223/…
+```
+
+`ba2d143`（2026-08-26，「schedule Shopee locally, keep CI to PTT only」）在改寫
+workflow 時刪掉了 `playwright install chromium --with-deps`。該 commit 自己寫下的
+理由是：
+
+> The browser-based Shopee scraper cannot work on a GitHub runner … **and
+> camoufox has no browser installed.**
+
+**這個理由屬於當時被移出 CI 的蝦皮。** 但 PTT——那次被**留下來**的來源——
+每一篇文章都在開 Chromium（`src/scrapers/ptt.py`，舊版第 96 行）。
+刪掉共用步驟的正當性在被移走的那一半成立，在留下的那一半不成立，而沒有人去對。
+
+**影響**：自 8/26 起連續三晚，CI 一筆資料都沒進來。資料庫中 PTT 的最後更新時間為
+`2026-08-28 01:59 UTC`，對應的是一次本機／手動執行，不是 CI。
+
+**決定**：PTT 改為純 HTTP，workflow **不裝瀏覽器**。
+
+**理由**：先量再改——`_main_content_text()` 與 Playwright 的 `inner_text()`
+在**六篇實際文章**上比對，正規化空白後**完全相同**：
+
+| 文章 | Playwright | HTTP | 相同 |
+|---|---|---|---|
+| M.1787975683.A.C67 | 748 | 737 | ✅ |
+| M.1787975066.A.FBF | 312 | 310 | ✅ |
+| M.1787972940.A.12F | 235 | 234 | ✅ |
+| M.1787971957.A.403 | 223 | 223 | ✅ |
+| M.1787971934.A.255 | 445 | 444 | ✅ |
+| M.1787971128.A.36C | 318 | 317 | ✅ |
+
+長度差異全部來自空白正規化。**瀏覽器沒有換到任何東西**，卻讓 CI 多了一個會被忘記的
+安裝步驟。**不存在的相依不會被忘記**——這比「記得裝」可靠。
+
+**附帶結論一**：**警報送達 ≠ 有人處理。** 這三晚 Discord 每晚都正確地送出 ⛔，
+而且訊息直接指向 Playwright。通報機制運作正常，迴圈卻沒有被關掉。
+警報的價值不在送出的那一刻結算。
+
+**附帶結論二**：spec 也漂移了。`scraper/spec.md` 原本**完全沒有 PTT 章節**，
+卻在旋轉拍賣的段落寫「純 HTTP，因此可在 GitHub Actions 上執行，與 PTT 同級穩定」
+——那句話當時對 PTT 是錯的（PTT 在開瀏覽器），對旋轉拍賣也已經是錯的
+（8/28 實測 runner 403、住宅 IP 200，見 #20）。**沒有章節的模組不會被檢查。**
+
+**否決**：**只把 `playwright install` 加回去**。這能讓當晚恢復，但留下的仍是一個
+「必須被記得」的相依，而它已經證明了自己會被忘記；下一次有人基於另一半的理由再刪一次，
+同樣會壞。止血時確實先加了回去，做完 PTT 改寫後再移除——因為留著它就會配上一段
+不再成立的註解，而註解漂移正是本專案反覆在修的東西。
+
+**重新評估**：若將來有需要瀏覽器的來源回到 CI，安裝步驟必須與它同時加回；
+workflow 中該位置的註解已寫明這件事。
+

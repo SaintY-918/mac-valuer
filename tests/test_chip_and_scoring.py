@@ -18,9 +18,9 @@ from src.calculator.score_engine import (
     nominal_inches,
     vfm_from_mapping,
 )
-from src.main import force_extract_chip
 from src.models.mac_spec import MacBookSpec
 from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark
+from src.utils.chip_extract import force_extract_chip
 
 # ── Chip extraction ───────────────────────────────────────────────────────────
 
