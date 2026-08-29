@@ -25,6 +25,11 @@
   的內容；`scripts/check_docs.py` 早已將其列入 `DOC_EXCLUDE`。本機檔案保留。
 
 ### 修正
+- **CI 的 pytest job 一直在 collection 階段就失敗**，四個依賴不在手打的安裝清單裡
+  （`feedparser`、`playwright`、`tabulate`、`google-genai`）。清單改為
+  `pip install pytest ruff -r requirements.txt`，不再需要有人記得同步。
+  原本不裝 requirements.txt 的理由是「會抓瀏覽器二進位檔」——`pip install` 並不會，
+  抓的是 `playwright install`，這也正是 browser job 得額外寫那一行的原因。
 - **decisions #7 的標題仍寫著「待處理」，內文狀態卻是「已修正」**。
 - **decisions #8 改寫為「公開前的資料衛生稽核」**，記錄稽核範圍、發現的分類與
   處理方式。

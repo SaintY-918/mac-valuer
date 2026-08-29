@@ -22,12 +22,17 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      # requirements.txt pulls in playwright and camoufox, which fetch browser
-      # binaries and are irrelevant to the test suite. Install only what the
-      # tested modules import.
+      # Installs the real requirements rather than a hand-listed subset. The
+      # subset drifted and the job had been failing at collection: tests import
+      # src.scrapers, whose __init__ loads every scraper, so feedparser and
+      # playwright were needed, plus tabulate for src.main and google-genai for
+      # the parser. None of the four were listed.
+      #
+      # The subset existed on the belief that requirements.txt fetches browser
+      # binaries. It does not -- `playwright install` does, which is why the
+      # browser job below still has to run it explicitly.
       - name: Install test dependencies
-        run: |
-          pip install pytest ruff pandas numpy pydantic sqlalchemy python-dotenv requests
+        run: pip install pytest ruff -r requirements.txt
 
       # Runs before the tests: a lint failure is usually faster to read than a
       # test failure caused by the same mistake.
