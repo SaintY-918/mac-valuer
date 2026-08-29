@@ -913,3 +913,104 @@ workflow 時刪掉了 `playwright install chromium --with-deps`。該 commit 自
 **重新評估**：若將來有需要瀏覽器的來源回到 CI，安裝步驟必須與它同時加回；
 workflow 中該位置的註解已寫明這件事。
 
+---
+
+## 30. CI 的依賴清單不再手寫
+
+**日期**：2026-08-29　**狀態**：已實作
+
+**背景**：`pytest` job 長期在 collection 階段就失敗，一個測試都沒跑到。安裝步驟手列了
+八個套件，實際需要十二個——測試 import `src.scrapers`，其 `__init__` 會載入全部三個
+爬蟲，因此需要 `feedparser`（PTT）與 `playwright`（蝦皮）；`src.main` 需要 `tabulate`；
+解析器需要 `google-genai`。
+
+這個失敗一直沒被注意到，是因為 browser job 是綠的，首頁只顯示
+「1 failing and 1 successful」——**一半綠的比全紅的更容易被略過。**
+
+**決定**：改為 `pip install pytest ruff -r requirements.txt`。
+
+**理由**：手寫的依賴清單，是一份「已經存在於別處的事實」的副本。本專案已經修過四次
+同類問題——效能基準分抄進說明文字、篩選上限抄進 Dashboard、晶片世代抄進爬蟲，
+這是第四個。副本不會自己跟上，而且它壞掉的時候沒有人會發現。
+
+**否決的方案**：把缺的四個套件補進清單。快，但下次新增依賴又會漂，
+而且下次同樣不會有人發現——這正是它能壞這麼久的原因。
+
+**修正的錯誤前提**：原本不用 requirements.txt 的理由寫在註解裡：「playwright 和
+camoufox 會抓瀏覽器二進位檔」。實測 `pip install` 並不會，抓的是 `playwright install`。
+證據就在同一個檔案裡：browser job 額外寫了 `python -m playwright install
+--with-deps chromium`，若 pip 就會抓，那行不需要存在。
+
+**代價**：實測完整安裝 27 秒。`pytest` job 的設計目的是「兩分鐘內回報邏輯迴歸」，
+這個增量在預算內。
+
+**重新評估的條件**：若安裝時間成長到讓 job 超過兩分鐘，再考慮拆一份
+`requirements-test.txt`，並用 `check_docs.py` 機械驗證它涵蓋所有 import——
+清單可以存在，但不能靠人記得同步。
+
+---
+
+## 31. 公開改用新 repo，而不是改寫舊 repo 後強推
+
+**日期**：2026-08-29　**狀態**：已完成
+
+**背景**：稽核（#8）發現歷史裡有登入 session 與個資，必須在公開前清除。
+手段有二：在原 repo 上 `git filter-repo` 改寫後 force-push，
+或把乾淨歷史推到一個新建的 repo。
+
+**決定**：新建 repo 承接乾淨歷史，原 repo 改名為 `mac-valuer-archive` 並維持 private。
+
+**理由**：force-push 之後 GitHub 仍會保留一段時間的無主 commit，理論上可經完整 SHA 存取。
+更關鍵的是 **repo 的 Activity 頁面會留下改寫前後的 SHA**，而那頁會隨 repo 一起公開——
+等於把鑰匙留在門口。官方對「移除敏感資料」的建議因此包含聯絡 GitHub Support 清除快取，
+那是一個沒有明確完成時點、也無法自行驗證的步驟。
+
+新 repo 沒有這個問題：**它從來沒有裝過那些物件**，所以不需要相信任何清除動作有生效，
+可以直接驗證。
+
+**否決的方案**：
+
+- **在原 repo force-push**：省下重設 secrets 與重新部署，但把「清乾淨了嗎」
+  變成一個要靠 GitHub 內部行為與 Support 回應才能回答的問題。
+- **刪除原 repo 再同名重建**：一樣乾淨，但刪除不可逆，而且**同名重建會放棄
+  GitHub 90 天內還原刪除 repo 的機制**。改名封存有同樣效果，且隨時能退回。
+
+**代價**：重設 4 個 Actions secret、重新部署 Streamlit、重填 About，實測約 20 分鐘。
+原 repo 改名後名稱立即釋出，新 repo 沿用原名，因此程式碼中三處寫死的 repo 網址不必修改。
+
+**驗證**：以不帶任何憑證的 `git clone` 取得公開 repo，掃描全物件庫，個資命中 0。
+**驗證必須從外部做**——在本機或已登入的環境檢查，看到的不是訪客看到的東西。
+
+**重新評估的條件**：`mac-valuer-archive` 仍含完整洩漏歷史，只是 private。
+它同時是還原點與未爆彈。新 repo 穩定運作後應刪除，不要無限期保留。
+
+---
+
+## 32. Streamlit app 的公開設定，與 repo 的公開設定是兩回事
+
+**日期**：2026-08-29　**狀態**：已修正
+
+**背景**：repo 轉公開後，`mac-valuer.streamlit.app` 對未登入訪客仍回 303，
+重導到 `share.streamlit.io/-/auth/app`。但用無痕視窗測試看起來完全正常。
+
+**原因**：無痕視窗內的分頁**共用 cookie**。修 app 時在同一個無痕視窗開過
+`share.streamlit.io`，因此帶著登入 cookie；auth 那一跳靜靜通過又轉回來，
+畫面與正常無異。真正的匿名訪客會停在登入頁。
+
+**決定**：Streamlit Community Cloud 的 app 分享設定必須單獨改為 public。
+repo 公開不會連帶讓 app 公開。
+
+**驗證方法**：用 `curl` 而不是瀏覽器。但 curl 預設不保存 cookie，
+Streamlit 的 session 交握會因此變成無窮重導，看起來像壞掉——**必須帶 cookie jar**：
+
+```bash
+curl -s -L -c cj.txt -b cj.txt -o /dev/null      -w '%{http_code}
+' https://mac-valuer.streamlit.app
+```
+
+`200` 才算通過。這個坑踩了兩次：先用一般瀏覽器誤判成好的，
+再用無 cookie 的 curl 誤判成壞的。
+
+**教訓**：驗證「訪客看得到什麼」時，**測試環境本身的狀態就是變數**。
+`docs/operations.md` 已記過一次同類實測（用未登入瀏覽器確認訪客看得到哪些元件），
+這次是同一個陷阱換了個形狀。

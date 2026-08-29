@@ -31,6 +31,8 @@
   原本不裝 requirements.txt 的理由是「會抓瀏覽器二進位檔」——`pip install` 並不會，
   抓的是 `playwright install`，這也正是 browser job 得額外寫那一行的原因。
 - **decisions #7 的標題仍寫著「待處理」，內文狀態卻是「已修正」**。
+- **`docs/decisions.md` 補上 #30–#32**：CI 依賴清單不再手寫、公開改用新 repo 而非
+  強推、Streamlit app 的公開設定與 repo 公開是兩回事（含正確的 curl 驗證方式）。
 - **decisions #8 改寫為「公開前的資料衛生稽核」**，記錄稽核範圍、發現的分類與
   處理方式。
 
