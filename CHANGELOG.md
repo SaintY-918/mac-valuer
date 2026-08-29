@@ -8,6 +8,15 @@
 ## [未發布]
 
 ### 新增
+- **本機排程失敗會通知 Discord**（`run_local_scrape.ps1`）。通知由 PowerShell 包裝層
+  發出而非 python：2026-08-29 的排程死在 `import pandas`，通知器連載入都沒有，
+  Discord 一個字都沒送出（見 decisions #28）。
+- **快速失敗自動重試一次**。300 秒內死亡代表根本沒啟動，重試幾乎免費；更晚的失敗
+  不重試，避免撞上排程的一小時上限。
+- **pipeline 中止時送出 ⛔ 心跳**（`src/main.py` 的 `__main__` 補上 try/except）。
+  原本任何在 Step 7 之前中止的錯誤都不會有任何訊息。
+- **PTT 的規格章節**（`.spec/specs/scraper/spec.md`）。此模組原本完全沒有 spec，
+  而沒有章節的模組不會被檢查。
 - `PAGE_SIZE` 環境變數，讓瀏覽器測試能用少量測資翻頁。
 - 頁尾新增 GitHub 原始碼連結。
 - **`src/scripts/revalidate_chips.py`**：以現行規則重新檢驗已存的晶片，
@@ -41,6 +50,9 @@
 - 規格文件：`scraper`、`api`、`llm-parser`、`score-engine`。
 
 ### 變更
+- **PTT 爬蟲改為純 HTTP，不再開瀏覽器**。內文抽取與 Playwright 的 `inner_text()`
+  在六篇實際文章上比對，正規化空白後完全相同——瀏覽器沒有換到任何東西，卻讓 CI
+  多了一個會被忘記的安裝步驟。`scraper.yml` 因此不再安裝 Chromium。
 - **VFM 分數構成改寫**：刪掉長條圖與規則表，只留下真實物件的逐步算式（每一步標明
   為何套用該乘數）與完整的晶片基準分。高度 924px → 673px，並移除 plotly 相依。
 - **色帶與中位數標明「全站基準」**。閾值本來就取自全部在售物件而非篩選後的清單，
@@ -75,6 +87,20 @@
 - **晶片基準分改用實測 Geekbench 6 多核並標註來源**；M5 系列先前為外推值。
 
 ### 修正
+- **CI 的 PTT 連續三晚完全沒有抓到資料**。`ba2d143` 以「camoufox has no browser
+  installed」為由刪掉 workflow 的 `playwright install`——該理由屬於當時被移出 CI
+  的蝦皮，未對留在 CI 的 PTT 檢查，而 PTT 每篇文章都在開 Chromium。
+  自 2026-08-26 起每晚失敗於 `BrowserType.launch`（見 decisions #29）。
+- **本機排程失敗時完全靜音**。2026-08-29 智慧型應用程式控制封鎖了 pandas 的
+  `timezones.cp313-win_amd64.pyd`，執行在五秒內死於 `src/main.py:9`，
+  而通知器在第 15 行才 import、心跳在 Step 7 才送出、`__main__` 沒有 try/except、
+  PowerShell 的結束碼沒有人讀。四層都沒接住（見 decisions #28）。
+- **PTT 的 feed 取不到內容時回傳空 list**，在心跳上顯示為「0 筆」，與真正平靜的
+  一晚無法區分。feedparser 對網路失敗的回報方式是「沒有 entries 的物件」而非例外。
+  改為拋出例外。
+- **旋轉拍賣的 spec 仍宣稱可在 GitHub Actions 上執行**，且「與 PTT 同級穩定」。
+  兩半都已不成立：旋轉拍賣在 runner 上每個請求都是 403（8/28 實測），
+  而 PTT 當時正在開瀏覽器。程式碼的 docstring 與 CHANGELOG 早已更新，只有 spec 沒有。
 - **「下一頁」完全沒有作用**。頁碼下拉選單同時有 `key` 與 `index=`，
   而 keyed widget 會還原自己存的值並忽略 `index`——按鈕把頁碼設成 2 之後，
   下拉選單回報 1、判定不一致，又把它設回 1。按鈕的動作被旁邊的元件抵銷。
