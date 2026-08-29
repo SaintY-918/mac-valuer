@@ -321,3 +321,32 @@ def test_the_offered_sizes_are_ones_the_scorer_recognises():
             # Pro 13 is its own series value; check via the family's own bucket.
             key = form_factor_key(series if inches > 13 else f"{family} 13", inches)
             assert FORM_INCHES[key] == inches, (family, inches, key)
+
+
+# ── a model name that identifies its own chip ─────────────────────────────────
+
+def test_a_neo_that_never_names_its_chip_is_still_a_neo():
+    """Sellers write "MacBook Neo 8G/256GB" and stop there.
+
+    The model has shipped with exactly one chip, so naming it is redundant to
+    them. Seven listings in one run were discarded for this.
+    """
+    assert force_extract_chip("Macbook neo 512GB") == "A18 Pro"
+    assert force_extract_chip("二手 MacBook Neo 256GB 藍色") == "A18 Pro"
+
+
+def test_the_model_name_survives_being_written_without_a_space():
+    assert force_extract_chip("【售】僅拆封測試!!!極新MacbookNeo 256G 粉色") == "A18 Pro"
+
+
+def test_an_explicit_chip_always_beats_the_model_name():
+    """This ordering is what keeps the mapping from being a guess.
+
+    When the next Neo generation ships with different silicon, a seller who
+    names that chip must not be overridden by a table written in 2026.
+    """
+    assert force_extract_chip("MacBook Neo M4 測試") == "M4"
+
+
+def test_an_intel_marker_still_wins_over_the_model_name():
+    assert force_extract_chip("Intel MacBook Neo") is None

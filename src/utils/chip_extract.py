@@ -46,6 +46,27 @@ INTEL_MARKERS = re.compile(
 APPLE_SILICON_FIRST_YEAR = 2020
 
 
+# A model name that identifies its chip on its own, for titles that never name
+# one. Sellers write "MacBook Neo 8G/256GB" because the model has shipped with
+# exactly one chip, so naming it would be redundant to them -- seven listings in
+# a single run were discarded for this, across three different sellers.
+#
+# PRODUCT FACT WITH AN EXPIRY DATE. True as of 2026-08: MacBook Neo ships only
+# with the A18 Pro. The next Neo generation makes it false, and this table is
+# where it breaks -- an unedited entry would label a new machine A18 Pro and
+# score it against a benchmark from the wrong silicon, which is worse than the
+# missing value it replaced (decisions #9: prefer a gap to a guess).
+#
+# When a second Neo generation ships, this mapping must either learn to tell
+# them apart or be deleted. Stored rows do not re-derive themselves; run
+# src/scripts/revalidate_chips.py afterwards (decisions #23).
+#
+# Matched with \s* because "MacbookNeo" appears in real titles.
+_MODEL_CHIPS = (
+    (re.compile(r"macbook\s*neo", re.I), "A18 Pro"),
+)
+
+
 def force_extract_chip(title: str) -> str | None:
     """Best chip found in the title, preferring the highest tier mentioned.
 
@@ -76,7 +97,15 @@ def force_extract_chip(title: str) -> str | None:
                 int(gen), {"": 0, "PRO": 1, "MAX": 2, "ULTRA": 3}[variant.upper()])
         if best is None or rank > best[0]:
             best = (rank, name)
-    return best[1] if best else None
+    if best is not None:
+        return best[1]
+    # Only consulted when the title named no chip at all: an explicit chip
+    # always wins, so a title that says both cannot be overridden by the model
+    # name. That ordering is what keeps this from becoming a guess.
+    for pattern, chip in _MODEL_CHIPS:
+        if pattern.search(title):
+            return chip
+    return None
 
 
 
