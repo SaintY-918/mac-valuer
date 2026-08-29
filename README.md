@@ -153,7 +153,7 @@ src/
 ruff check .                          # linter，規則經篩選，見 ruff.toml
 python scripts/check_docs.py          # 文件與程式碼是否還說同一件事
 pytest tests/ --ignore=tests/e2e      # 111 項純邏輯，約 2 秒
-pytest tests/e2e                      # 19 項瀏覽器實測，約 20 秒
+pytest tests/e2e                      # 瀏覽器實測，約 20 秒
 ```
 
 **測試套件刻意不吃 API 金鑰、也不連資料庫。** 這條限制不是為了方便，是它逼著

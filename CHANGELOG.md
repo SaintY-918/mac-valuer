@@ -7,7 +7,18 @@
 
 ## [未發布]
 
+（尚無變更）
+
+---
+
+## [0.1.0] — 2026-08-29
+
+首次標記版本。此前的開發歷程都堆在「未發布」底下，讀者無從得知線上跑的是哪一段。
+
 ### 新增
+- **`.spec/specs/data-models/spec.md`**：`MacBookSpec`、`ScoringWeights`、`RawListing`
+  的欄位語意、為什麼全部可為空、以及跨模型的三條通則。此前是 CLAUDE.md 模組表中
+  唯一未撰寫的一項——**沒有章節的模組不會被檢查**。
 - **本機排程失敗會通知 Discord**（`run_local_scrape.ps1`）。通知由 PowerShell 包裝層
   發出而非 python：2026-08-29 的排程死在 `import pandas`，通知器連載入都沒有，
   Discord 一個字都沒送出（見 decisions #28）。
@@ -27,13 +38,13 @@
 - **`.spec/specs/database/spec.md`**：Schema、三個時間欄位的分工、下架判定為何以年齡
   而非集合為準、讀取路徑的欄位規則。
 - **`MAX_REPAIR_CALLS_PER_RUN`**（預設 50）與解析指紋：文字沒變過的物件不再重複詢問。
-- **測試套件（pytest）**，89 項，涵蓋規格抽取、晶片辨識、VFM 評分、瑕疵偵測、
+- **測試套件（pytest）**，涵蓋規格抽取、晶片辨識、VFM 評分、瑕疵偵測、
   下架判定與各爬蟲的過濾規則。全部為純邏輯，**無金鑰、無資料庫亦可執行**。
 - **CI 品質關卡**：每次 push 與 PR 自動執行 lint 與測試。
 - **ruff linter**（`ruff.toml`），規則經篩選，只保留能抓出 bug 的項目。
 - **文件一致性檢查**（`scripts/check_docs.py`），驗 env 變數、文件連結、spec 索引
   與評分常數，同時掛在 pytest 與 CI。
-- **瀏覽器測試**（`tests/e2e/`，19 項）：自建固定測試資料庫，用 Playwright 驗卡片分數、
+- **瀏覽器測試**（`tests/e2e/`）：自建固定測試資料庫，用 Playwright 驗卡片分數、
   瑕疵徽章、320／390／1440px 無橫向溢出、零 JS 錯誤。CI 獨立 job。
 - **旋轉拍賣（Carousell）成為第三個資料來源**。純 HTTP、無反爬牆、資料位於
   schema.org JSON-LD，因此可在 GitHub Actions 上執行，不依賴本機。
@@ -87,6 +98,11 @@
 - **晶片基準分改用實測 Geekbench 6 多核並標註來源**；M5 系列先前為外推值。
 
 ### 修正
+- **MacBook Neo 的物件整批被丟棄——第二種成因**。賣家寫「MacBook Neo 8G/256GB」
+  就停筆，因為該機型至今只出過一種晶片，寫出來對他們是贅字；而抽取器抽不到晶片
+  就丟掉。一次執行有 **7 筆**（跨三個賣家）因此消失。新增機型→晶片對照，
+  **僅在完全抽不到時套用**，標題明寫的晶片一律優先——這個順序是它與猜測的分界。
+  對照本身標明是「有到期日的產品事實」：下一代 Neo 上市即失效，且註明該改哪裡。
 - **CI 的 PTT 連續三晚完全沒有抓到資料**。`ba2d143` 以「camoufox has no browser
   installed」為由刪掉 workflow 的 `playwright install`——該理由屬於當時被移出 CI
   的蝦皮，未對留在 CI 的 PTT 檢查，而 PTT 每篇文章都在開 Chromium。
@@ -178,6 +194,9 @@
 - `CLAUDE.md` 新增公開專案的個資檢查與外部免費服務的維護風險條款。
 
 ### 文件
+- **CHANGELOG 與 README 不再手抄測試數量**。數字寫進散文就得靠人維護，
+  而它已經從 89 漂到 190（e2e 從 19 漂到 23）。**刪掉數字而不是更新數字**——
+  更新只會讓它下次再漂一遍。
 - 記錄蝦皮聯盟行銷 Open API 的申請流程、門檻與**權限需另外開通**的實測結果。
 - 記錄**蝦皮封鎖 GitHub runner 為實測結論**，非推論（`scene=crawler_item`）。
 - 修正 `CLAUDE.md` 與 skill 文件中指向不存在路徑的 spec 連結。
