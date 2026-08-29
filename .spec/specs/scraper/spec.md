@@ -1,3 +1,42 @@
+### 3.W PTT Scraper (MacShop 板)
+**目標**：抓取 PTT MacShop 板的二手 Mac 讓售文。
+
+- **實作與繼承**：`PTTScraper` 繼承 `BaseScraper`，`source="ptt"`。
+- **傳輸方式**：**純 HTTP，不使用瀏覽器**。清單來自 Atom feed
+  （`https://www.ptt.cc/atom/MacShop.xml`），內文來自文章頁的
+  `<div id="main-content">`，兩者皆為伺服器端渲染的靜態內容。
+  因此**可在 GitHub Actions 上執行**，不依賴本機。
+
+  此處曾以 Playwright 開 Chromium 讀每一篇文章。2026-08-26 的 `ba2d143`
+  以「camoufox has no browser installed」為由刪掉 workflow 的
+  `playwright install` —— 該理由屬於當時被移出 CI 的蝦皮，未對留在 CI 的 PTT
+  檢查，導致 2026-08-26 起連續三晚的排程都在啟動瀏覽器時失敗。
+
+  改為純 HTTP 前已比對過：`_main_content_text()` 與 Playwright 的
+  `inner_text()` 在六篇實際文章上，正規化空白後**完全相同**。瀏覽器沒有換到
+  任何東西。**不存在的相依不會被忘記**。
+
+- **內文抽取（`_main_content_text`）**：
+  - 自 `id="main-content"` 起取到文件結尾，**不嘗試配對巢狀 `</div>`**——
+    呼叫端會在簽名分隔線 `--` 處截斷，遠早於頁尾，收尾邊界因此無關緊要。
+  - 必須先移除 `<script>` / `<style>`：script 字串中出現的 `</div>`
+    會使任何以標籤配對為基礎的作法提前結束。
+  - 區塊結束標籤轉為換行、行內標籤移除，此即瀏覽器 `inner_text()` 的規則。
+  - 必須 `html.unescape()`：售價常寫成 `&lt;&lt; 32000 &gt;&gt;`，
+    不還原則價格 regex 抽不到。
+  - 回應必須指定 `encoding = "utf-8"`：PTT 不一定在標頭宣告，
+    交給 requests 猜會使全部中文變成亂碼。
+
+- **過濾機制**：標題須含機型名稱與晶片代號，且不含 `_EXCLUDE_TITLES`
+  （徵求、交換、Intel 世代）。
+- **售出判定**：以 `_SOLD_KEYWORDS` 比對內文。
+- **失敗語意**：**feed 取不到任何 entry 時必須拋出例外。**
+  feedparser 對網路失敗的回報方式是「一個沒有 entries 的物件」而非例外，
+  若照樣回傳空 list，heartbeat 會顯示「0 筆」——與真正的平靜夜晚無法區分，
+  正是本專案在別處已修掉的那種混淆。
+
+---
+
 ### 3.X Shopee Scraper (蝦皮)
 **目標**：抓取蝦皮上的二手 MacBook 拍賣資訊。
 
@@ -66,7 +105,12 @@
 - **實作與繼承**：`CarousellScraper` 繼承 `BaseScraper`，`source="carousell"`。
 - **傳輸方式**：**純 HTTP，不使用瀏覽器**。分類頁與商品頁皆為伺服器端渲染，
   所需欄位全部位於 schema.org 的 `application/ld+json` 區塊。
-  因此**可在 GitHub Actions 上執行**，與 PTT 同級穩定，不依賴本機。
+- **執行位置：本機，不在 GitHub Actions。**
+  此處原本寫「因此可在 GitHub Actions 上執行，與 PTT 同級穩定」——推論錯誤。
+  2026-08-28 實測：同一個 sitemap 請求，GitHub runner 得到 403，住宅 IP 得到 200
+  （五種標頭 × 五個路徑，僅 `robots.txt` 通過）。旋轉拍賣過濾的是**請求來源**，
+  不是頁面如何渲染。**不需要瀏覽器，不等於不會被擋。**
+  留在 CI 只會每晚發一則假失敗，而每次都響的警報等同於沒有警報。
 
 - **robots.txt 遵循（2026-08-27 查核）**：
 
