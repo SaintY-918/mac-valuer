@@ -51,3 +51,44 @@ def test_checker_notices_a_wrong_constant(tmp_path, monkeypatch):
     monkeypatch.setattr(check_docs, "ROOT", tmp_path)
     errors = _run(check_docs.check_scoring_constants)
     assert any("form multipliers" in e for e in errors), errors
+
+
+def test_anchors_match_what_github_generates():
+    """The slug rule is only useful if it reproduces GitHub's, awkward cases included.
+
+    These three were checked against the ids GitHub actually rendered: an
+    em-dash between spaces collapses to two hyphens, a full-width comma between
+    two words collapses to none, and a bracket touching a word joins it.
+    """
+    anchors = check_docs._anchors(ROOT / "docs/decisions.md")
+    for expected in (
+        "5-行情價差顯示--延後",
+        "31-公開改用新-repo而不是改寫舊-repo-後強推",
+        "15-支援-macbook-neoa18-pro-寫死家族的老問題換個形狀再犯",
+    ):
+        assert expected in anchors, f"{expected} is not among the generated anchors"
+
+
+def test_checker_notices_a_broken_anchor(tmp_path, monkeypatch):
+    """Rename a heading the index points at. Nothing else would notice.
+
+    A fragment matching no heading does not error in a browser -- it scrolls to
+    the top of the page, which looks like a slow jump rather than a broken link.
+    """
+    doc = tmp_path / "docs"
+    doc.mkdir(parents=True)
+    target = doc / "decisions.md"
+    target.write_text(
+        "\n".join([
+            "# T",
+            "",
+            "- [go](#a-heading-that-moved)",
+            "",
+            "## A heading that stayed",
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_docs, "ROOT", tmp_path)
+    monkeypatch.setattr(check_docs, "_doc_files", lambda: [target])
+    errors = _run(check_docs.check_doc_links)
+    assert any("no heading generates" in e for e in errors), errors

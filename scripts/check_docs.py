@@ -78,20 +78,48 @@ def check_env_parity(errors: list[str]) -> None:
         errors.append(f".env.example declares {name}, but no code reads it")
 
 
+def _anchors(path: Path) -> set[str]:
+    """The heading anchors GitHub will generate for a Markdown file.
+
+    Lowercase, drop everything that is not a word character, space or hyphen,
+    then spaces become hyphens. Verified against the ids GitHub actually
+    rendered for all 32 headings in docs/decisions.md, including the awkward
+    ones -- an em-dash surrounded by spaces leaves two hyphens, and a comma
+    between two words leaves none.
+
+    Without this, a renamed heading silently breaks every link pointing at it:
+    an anchor that matches nothing scrolls to the top of the page rather than
+    reporting an error, so the index in a long document rots unnoticed.
+    """
+    out = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("#"):
+            continue
+        text = line.lstrip("#").strip()
+        slug = re.sub(r"[^\w \-]", "", text.lower(), flags=re.UNICODE)
+        out.add(slug.replace(" ", "-"))
+    return out
+
+
 def check_doc_links(errors: list[str]) -> None:
-    """Relative Markdown links must point at something that exists."""
+    """Relative Markdown links, and heading anchors, must resolve."""
     link = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
     for path in _doc_files():
         rel_doc = path.relative_to(ROOT).as_posix()
         for m in link.finditer(path.read_text(encoding="utf-8")):
             target = m.group(1)
-            if target.startswith(("http://", "https://", "mailto:", "#")):
+            if target.startswith(("http://", "https://", "mailto:")):
                 continue
-            target = target.split("#", 1)[0]
-            if not target:
-                continue
-            if not (path.parent / target).exists():
+            target, _, fragment = target.partition("#")
+            dest = path if not target else path.parent / target
+            if target and not dest.exists():
                 errors.append(f"{rel_doc} links to {target}, which does not exist")
+                continue
+            if fragment and dest.suffix == ".md" and dest.exists():
+                if fragment not in _anchors(dest):
+                    errors.append(
+                        f"{rel_doc} links to #{fragment}, which no heading generates"
+                    )
 
 
 def check_spec_index(errors: list[str]) -> None:
