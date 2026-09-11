@@ -45,6 +45,9 @@ jobs:
           SHOPEE_STATE_B64: ${{ secrets.SHOPEE_STATE_B64 }}
         run: python -m src.scripts.restore_shopee_session
 
+      - name: Fingerprint the restored session
+        run: python -m src.scripts.session_fingerprint shopee_state.json
+
       - name: Report runner location
         run: |
           echo "Runner egress IP and geo (Shopee sees this):"
@@ -57,14 +60,13 @@ jobs:
           SHOPEE_MAX_DELAY: "8"
         run: python -m src.scripts.probe_shopee_browser
 
-      # The scraper writes the session back after a successful run; capturing it
-      # shows whether Shopee rotated or invalidated the cookies. Skipped unless
-      # the file has content, so an empty artifact never implies a good run.
-      - name: Upload resulting session for inspection
+      # The scraper writes the session back after a successful run; fingerprinting
+      # it (not uploading it) shows whether Shopee rotated or invalidated the
+      # cookies — diff this against the "restored" fingerprint above by eye.
+      # This used to upload shopee_state.json itself as a build artifact, which
+      # on a public repo meant anyone could download a live login credential
+      # for the 1-day retention window. A hash + cookie names carries the same
+      # signal without the leak.
+      - name: Fingerprint the session after the run
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: shopee-state-after-run
-          path: shopee_state.json
-          retention-days: 1
-          if-no-files-found: ignore
+        run: python -m src.scripts.session_fingerprint shopee_state.json
