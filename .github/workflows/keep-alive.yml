@@ -3,12 +3,15 @@ name: Streamlit keep-alive
 # Streamlit Community Cloud sleeps an app after ~12h with no visitor traffic
 # (docs/operations.md's quota table). A sleeping app greets the next visitor
 # with a "waking up" screen instead of the dashboard -- fine for a personal
-# tool, bad for a portfolio piece a stranger opens once. This pings the app
-# often enough that it never gets there.
+# tool, bad for a portfolio piece a stranger opens once.
 #
-# Uses a cookie jar, not a bare curl, because of docs/decisions.md #32: without
-# cookies, Streamlit's session handshake looks like an infinite redirect and a
-# bare `curl -I` misreports a healthy app as broken.
+# A plain curl does not prevent this and cannot detect it either: Streamlit
+# Cloud serves 200 from the app's URL whether it's asleep or awake (see
+# docs/decisions.md #35's follow-up), because what actually keeps the app
+# warm -- and what the sleep screen's "Yes, get this app back up!" button
+# needs a click on -- only exists once a real browser loads the page and its
+# JS opens a websocket. src/scripts/wake_streamlit.py drives headless
+# Chromium to do exactly that, and clicks the button if the app is asleep.
 
 on:
   schedule:
@@ -16,16 +19,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  ping:
+  wake:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
-      - name: Ping the dashboard
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
         run: |
-          code=$(curl -s -L -c cj.txt -b cj.txt -o /dev/null -w '%{http_code}' \
-            https://mac-valuer.streamlit.app)
-          echo "response: $code"
-          if [ "$code" != "200" ]; then
-            echo "::warning::mac-valuer.streamlit.app returned $code instead of 200"
-          fi
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Wake the dashboard
+        run: python -m src.scripts.wake_streamlit
