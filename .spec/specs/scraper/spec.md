@@ -94,7 +94,7 @@
   2. **L2**: `stock > 0` (0 視為售出)。
   3. **L3**: `body_content` 最大長度限制為 800 字元。
 - **防爆機制 (Safety)**：
-  - 支援環境變數 `MAX_LLM_CALLS_PER_RUN` (Default: 30)。
+  - 支援環境變數 `MAX_LLM_CALLS_PER_RUN` (Default: 100，與 `.env.example` 一致)。
   - 達上限時觸發 Graceful Shutdown。
 
 ---

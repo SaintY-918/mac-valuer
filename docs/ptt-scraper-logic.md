@@ -9,7 +9,7 @@
 ```
 [Step 1] RSS 抓取 + 標題過濾
        ↓
-[Step 2] Playwright 抓取內文 + 售出偵測
+[Step 2] HTTP 抓取內文 + 售出偵測
        ↓
 [Step 3] LLM 解析 (Gemini) + Regex 備援
        ↓
@@ -33,7 +33,7 @@ PTT 的 Atom Feed **只包含最新的約 20 篇文章**。這是 PTT 官方 RSS
 | 條件 | 規則 |
 |------|------|
 | 包含 "macbook"（不分大小寫） | 排除非 MacBook 的販售（如 iPad） |
-| 包含 M 晶片關鍵字 | `m1`, `m2`, `m3`, `m4`（不分大小寫） |
+| 標題提及 Apple Silicon | `src/utils/chip_extract.py` 的 `mentions_apple_silicon()`，涵蓋 M 系列與 A 系列（不是寫死的 `m1`~`m4` 清單——那個清單曾經靜靜漏掉每一款 M5 與 A 系列機型，見 `docs/decisions.md`） |
 | **不**包含排除標籤 | `[徵]`, `[交換]`, `intel`, `i5`, `i7`, `i9`, `2017`, `2018` |
 
 範例：
@@ -45,28 +45,36 @@ PTT 的 Atom Feed **只包含最新的約 20 篇文章**。這是 PTT 官方 RSS
 
 ---
 
-## Step 2：Playwright 內文爬取
+## Step 2：HTTP 內文爬取
 
-通過過濾的文章 URL 會用 Playwright（headless Chromium）並行抓取內文。
+通過過濾的文章 URL 會用純 HTTP（`requests`，不開瀏覽器）並行抓取內文。
+
+這裡曾經是 Playwright + headless Chromium：`_main_content_text()` 與 Playwright 的
+`inner_text()` 在六篇真實文章上逐字比對，結果完全一致（去除空白差異後），而瀏覽器
+啟動曾讓 CI 連續三晚失敗（見 `src/scrapers/ptt.py` 檔頭與 `docs/decisions.md`）。
+沒有理由為了一個純文字頁面背一個瀏覽器依賴。
 
 ### 並行控制
 
 ```python
-_sem = asyncio.Semaphore(SCRAPER_CONCURRENCY)  # 預設 5
+self._sem = asyncio.Semaphore(int(os.getenv("SCRAPER_CONCURRENCY", "5")))
+self._delay = float(os.getenv("SCRAPER_DELAY_SECONDS", "1"))
 ```
 
-最多 5 個頁面同時開啟，每頁抓完後暫停 `SCRAPER_DELAY_SECONDS`（預設 1 秒），避免對 PTT 造成壓力。
+最多 5 個請求同時進行，每篇抓完後暫停 `SCRAPER_DELAY_SECONDS`（預設 1 秒），避免對 PTT 造成壓力。
 
 ### 內文擷取
 
 ```python
-el = await page.query_selector("#main-content")
-text = el.inner_text()
-# 去掉 PTT 推文（"--" 分隔線後的部分）
-text = text.split("--")[0]
+resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=15)
+resp.encoding = "utf-8"
+text = _main_content_text(resp.text)   # 正規表達式版的 inner_text()
+text = text.split("--")[0] if "--" in text else text
 ```
 
-**只保留正文**，推文 (`--` 之後的內容) 不送給 LLM。
+`_main_content_text()` 用一組正規表達式（去 `<script>`/`<style>`、`<br>` 轉換行、
+區塊標籤結尾轉換行、去除剩餘標籤、`html.unescape`）重現瀏覽器 `inner_text()` 的輸出，
+再切掉 PTT 推文（`--` 分隔線之後的內容）。**只保留正文**，推文不送給 LLM。
 
 ### 售出偵測（全文搜尋）
 
@@ -217,7 +225,7 @@ PTT RSS Feed (~20 篇)
   (chip/macbook/排除標籤)
        │
        ▼
-Playwright 並行抓內文
+HTTP 並行抓內文
 (semaphore=5, delay=1s)
        │
        ├─── 已售出？→ status="sold"
