@@ -58,9 +58,11 @@
   實際檔案（見 [decisions #34](docs/decisions.md#34-ci-探測腳本不再把蝦皮-session-打包成公開-artifact)）。
 
 ### 新增
-- **`.github/workflows/keep-alive.yml`**：每 6 小時 ping 一次 Streamlit app，避免
-  Community Cloud 的 ~12 小時無流量休眠讓作品集訪客第一眼看到喚醒畫面
-  （見 [decisions #35](docs/decisions.md#35-streamlit-休眠的對策是排程-keep-alive不是換平台)）。
+- **`.github/workflows/keep-alive.yml`** + **`src/scripts/wake_streamlit.py`**：每
+  6 小時用 headless Chromium（Playwright）實際載入 Streamlit app 並在休眠時點擊喚醒
+  按鈕，避免 Community Cloud 的 ~12 小時無流量休眠讓作品集訪客第一眼看到喚醒畫面。
+  第一版用 `curl` ping，同日內發現無效——休眠中的 app 一樣回 200，curl 驗證不到真正
+  需要的瀏覽器 JS/websocket 行為（見 [decisions #35](docs/decisions.md#35-streamlit-休眠的對策要真的打開瀏覽器curl-只是看起來有用)）。
 - **`LICENSE`**：採用 MIT License，README 原本名不符實的「授權與注意事項」拆成
   「授權」與「安全與使用限制」兩段（見 [decisions #36](docs/decisions.md#36-公開授權採用-mit-license)）。
 - **`.github/ISSUE_TEMPLATE/bug_report.md`**：極簡的 bug report 模板。
