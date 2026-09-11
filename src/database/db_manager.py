@@ -43,7 +43,14 @@ _MODEL_TYPE_SERIES = {
 class DBManager:
     def __init__(self):
         db_url = os.getenv("DATABASE_URL", "sqlite:///./mac_deals.db")
-        self.engine = create_engine(db_url, echo=False, pool_pre_ping=True)
+        # A remote Postgres endpoint (Neon) can go unreachable at the TCP level —
+        # a blocked port, a stalled route — and without an explicit timeout
+        # psycopg2 falls back to the OS default per resolved IP. Neon endpoints
+        # resolve to three IPs, so one bad network blip stalled the whole
+        # pipeline for minutes (2026-09-11) before the retry wrapper even got a
+        # chance to run again. 10s is generous for a live connection attempt.
+        connect_args = {"connect_timeout": 10} if db_url.startswith("postgresql") else {}
+        self.engine = create_engine(db_url, echo=False, pool_pre_ping=True, connect_args=connect_args)
         Base.metadata.create_all(self.engine)
         self._migrate_db()
         self.Session = sessionmaker(bind=self.engine)
