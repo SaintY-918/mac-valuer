@@ -1,0 +1,31 @@
+name: Streamlit keep-alive
+
+# Streamlit Community Cloud sleeps an app after ~12h with no visitor traffic
+# (docs/operations.md's quota table). A sleeping app greets the next visitor
+# with a "waking up" screen instead of the dashboard -- fine for a personal
+# tool, bad for a portfolio piece a stranger opens once. This pings the app
+# often enough that it never gets there.
+#
+# Uses a cookie jar, not a bare curl, because of docs/decisions.md #32: without
+# cookies, Streamlit's session handshake looks like an infinite redirect and a
+# bare `curl -I` misreports a healthy app as broken.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6h, well inside the ~12h sleep window
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping the dashboard
+        run: |
+          code=$(curl -s -L -c cj.txt -b cj.txt -o /dev/null -w '%{http_code}' \
+            https://mac-valuer.streamlit.app)
+          echo "response: $code"
+          if [ "$code" != "200" ]; then
+            echo "::warning::mac-valuer.streamlit.app returned $code instead of 200"
+          fi
