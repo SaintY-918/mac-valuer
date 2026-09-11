@@ -13,8 +13,9 @@ import json
 import logging
 
 from src.database.db_manager import DBManager, Deal
+from src.utils.logging_setup import configure_logging
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+configure_logging()
 logger = logging.getLogger(__name__)
 
 

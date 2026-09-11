@@ -28,6 +28,7 @@ from src.utils.chip_extract import (
     INVALID_CHIPS,
     force_extract_chip,
 )
+from src.utils.logging_setup import configure_logging
 
 DEFAULT_ALERT_VFM_THRESHOLD = 500.0
 
@@ -36,7 +37,7 @@ DEFAULT_ALERT_VFM_THRESHOLD = 500.0
 # is not evidence a listing is gone — see DBManager.sweep_stale.
 STALE_DAYS = int(os.getenv("STALE_DAYS", "14"))
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+configure_logging()
 logger = logging.getLogger(__name__)
 
 

@@ -12,7 +12,6 @@ Exit codes: 0 listings found · 1 blocked/failed · 2 misconfigured.
 """
 
 import asyncio
-import logging
 import os
 import sys
 
@@ -22,8 +21,9 @@ load_dotenv()
 
 from src.scrapers.shopee import ShopeeScraper, ShopeeSessionExpired
 from src.scrapers.shopee_api import credentials_configured
+from src.utils.logging_setup import configure_logging
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+configure_logging()
 
 
 def main() -> int:

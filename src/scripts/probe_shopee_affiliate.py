@@ -13,7 +13,6 @@ so you can eyeball whether these are real used-machine listings.
 
 import argparse
 import json
-import logging
 import os
 import sys
 
@@ -26,8 +25,9 @@ from src.scrapers.shopee_api import (
     ShopeeAuthError,
     credentials_configured,
 )
+from src.utils.logging_setup import configure_logging
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+configure_logging()
 
 # Words that suggest a genuinely used machine rather than a new/official listing.
 _USED_HINTS = ["二手", "中古", "福利", "整新", "自用", "無傷", "9成", "九成", "近全新"]
