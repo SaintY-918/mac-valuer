@@ -52,18 +52,23 @@
 - [14. 瀏覽器測試：只驗會默默壞掉的東西](#14-瀏覽器測試只驗會默默壞掉的東西)
 - [19. 可執行的腳本，不是要人照著重打的註解](#19-可執行的腳本不是要人照著重打的註解)
 - [30. CI 的依賴清單不再手寫](#30-ci-的依賴清單不再手寫)
+- [37. logging 設定集中到單一模組](#37-logging-設定集中到單一模組)
 
 **維運與失敗通報** — 一個不會出聲的失敗等於沒有失敗。
 
 - [27. 一個 bug 的兩層：壞掉的，和慢到像壞掉的](#27-一個-bug-的兩層壞掉的和慢到像壞掉的)
 - [28. 通報者不能活在被通報的東西裡面](#28-通報者不能活在被通報的東西裡面)
 - [29. 共用步驟不能只用被移除者的理由來刪](#29-共用步驟不能只用被移除者的理由來刪)
+- [33. Postgres 連線要設逾時，不能信任 OS 預設值](#33-postgres-連線要設逾時不能信任-os-預設值)
+- [35. Streamlit 休眠的對策是排程 keep-alive，不是換平台](#35-streamlit-休眠的對策是排程-keep-alive不是換平台)
 
 **公開與隱私** — 提交出去就收不回來。
 
 - [8. 公開前的資料衛生稽核](#8-公開前的資料衛生稽核)
 - [31. 公開改用新 repo，而不是改寫舊 repo 後強推](#31-公開改用新-repo而不是改寫舊-repo-後強推)
 - [32. Streamlit app 的公開設定，與 repo 的公開設定是兩回事](#32-streamlit-app-的公開設定與-repo-的公開設定是兩回事)
+- [34. CI 探測腳本不再把蝦皮 session 打包成公開 artifact](#34-ci-探測腳本不再把蝦皮-session-打包成公開-artifact)
+- [36. 公開授權採用 MIT License](#36-公開授權採用-mit-license)
 
 ---
 
@@ -1071,3 +1076,141 @@ curl -s -L -c cj.txt -b cj.txt -o /dev/null      -w '%{http_code}
 **教訓**：驗證「訪客看得到什麼」時，**測試環境本身的狀態就是變數**。
 `docs/operations.md` 已記過一次同類實測（用未登入瀏覽器確認訪客看得到哪些元件），
 這次是同一個陷阱換了個形狀。
+
+---
+
+## 33. Postgres 連線要設逾時，不能信任 OS 預設值
+
+**日期**：2026-09-11　**狀態**：已修正
+
+**背景**：2026-09-11 排程執行時，整條 pipeline 因連不上 Neon Postgres 而中斷，
+`logs/scrape_2026-09-11.log` 顯示三個解析出來的 IP 全部 TCP 逾時，光是第一次嘗試
+就卡了約 74 秒，`run_local_scrape.ps1` 重試一次後仍失敗，總共卡了約 3.5 分鐘才回報
+Discord。`DBManager.__init__` 建立 `create_engine` 時沒有設定 `connect_timeout`，
+psycopg2 因此使用作業系統的預設逾時值（在 Windows 上遠長於合理範圍），而 Neon 端點
+會解析出多個 IP，每個都要各自等到逾時才輪到下一個。
+
+**決定**：`create_engine` 對 Postgres 連線加上 `connect_args={"connect_timeout": 10}`
+（sqlite 路徑不受影響，因為該參數不適用）。
+
+**理由**：失敗要快，既有的「重試一次」機制才真正有意義——把整個重試預算耗在等待
+單次連線逾時上，等同沒有重試。10 秒對一次即時連線嘗試已經足夠寬鬆，不會誤殺短暫的
+網路抖動。
+
+**否決的方案**：在應用層加更多重試次數或 exponential backoff——治標不治本，真正的
+問題是單次嘗試等太久，不是嘗試次數不夠。
+
+**驗證**：實測對一個刻意不存在的位址（`10.255.255.1`）建立連線，加上
+`connect_timeout=10` 後在 **10.1 秒**內拋出 `OperationalError`（未設定前無上限，
+本次事故中單次嘗試卡了約 74 秒）。`pytest tests/ -q --ignore=tests/e2e` 全過。
+
+**重新評估的條件**：若之後改用連線池服務（pgbouncer、Neon pooled connection），
+需重新檢視 10 秒是否仍是合適的值——池化連線的逾時語意不同於直連。
+
+---
+
+## 34. CI 探測腳本不再把蝦皮 session 打包成公開 artifact
+
+**日期**：2026-09-11　**狀態**：已修正
+
+**背景**：作品集體檢時發現 `.github/workflows/shopee-ci-test.yml` 會把探測完成後的
+`shopee_state.json`（含蝦皮登入 cookie）以 `actions/upload-artifact` 上傳，保留期
+1 天。這支 workflow 本身是手動觸發、有詳細註解說明「這是活的登入憑證」的刻意技術驗證
+手段，但公開 repo 上任何能看到該次 run 的人都能在保留期內下載這個 artifact，等於把
+一把活的鑰匙放在公開的門口——與 #31 記錄的教訓（清乾淨的驗證必須從外部做，且不留下
+可被存取的殘餘）是同一類風險。
+
+**決定**：移除 `upload-artifact` 步驟，改為新增 `src/scripts/session_fingerprint.py`，
+在還原 session 後與探測跑完後各印一次「檔案大小 + SHA256 前 12 碼 + cookie 名稱與
+到期時間」，在 log 裡人工比對前後兩次的雜湊即可判斷蝦皮是否 rotate 或作廢了 cookie，
+不需要下載任何檔案。
+
+**理由**：這支 workflow 存在的目的只有一個——回答「蝦皮 session 是否還有效、是否被
+這次探測動作改變」，雜湊比對能回答同一個問題，且指紋值本身即使外流也無法還原成可用
+的登入憑證。
+
+**否決的方案**：
+- **縮短保留期**：1 天已經是 `actions/upload-artifact` 支援的最短值，無法再縮短。
+- **限制 artifact 存取權限**：GitHub Actions artifact 的存取權限跟著 repo 可見度走，
+  公開 repo 沒有「只有特定人能下載」這個選項，除非把整個 repo 改回 private——
+  這違背了 #31/#32 讓專案公開的既有決定。
+
+**驗證**：本機以偽造的 state 檔案跑過 `session_fingerprint.py`，確認輸出只有雜湊值、
+cookie 名稱與到期時間，不含 `value` 欄位（實際的 cookie 內容）；對不存在的路徑呼叫
+會印出「無 session」而非拋出例外，不會讓 workflow 因檔案缺失而失敗。
+
+---
+
+## 35. Streamlit 休眠的對策是排程 keep-alive，不是換平台
+
+**日期**：2026-09-11　**狀態**：已實作（遷移評估延後）
+
+**背景**：`mac-valuer.streamlit.app` 部署在 Streamlit Community Cloud，
+`docs/operations.md` 記載的額度是「約 12 小時無流量即休眠」。休眠後下一位訪客看到的
+是喚醒中的畫面而非儀表板——對個人工具影響有限，但對一個作品集連結，陌生訪客只會點開
+一次，遇到休眠畫面等於直接流失。
+
+**決定**：新增 `.github/workflows/keep-alive.yml`，每 6 小時（遠短於 12 小時門檻）
+對 app URL 發一次帶 cookie jar 的 `curl` 請求，讓 process 保持活躍；同時保留
+`workflow_dispatch` 方便手動測試。遷移到 Render / Fly.io / Hugging Face Spaces 等
+其他平台的評估**延後**，先觀察 keep-alive 的實際效果。
+
+**理由**：keep-alive 是成本最低的對策——不需要搬家、不需要重新設定 secrets 與網域，
+且與現有 `scraper.yml` 的 cron 模式一致，維護心智負擔低。是否要換平台是一個更大的
+決定（涉及免費層限制、部署流程改動），在確認現有方案不夠用之前不值得投入。
+
+**否決的方案**：不做任何處理，僅在 README 已知問題註記——使用者明確認為「觀感不好」
+需要實際對策，被否決。
+
+**代價**：每 6 小時消耗一次 GitHub Actions 用量（免費額度內可忽略）；若 Streamlit
+的實際休眠門檻比文件記載的 12 小時更短，6 小時頻率可能仍不夠，需要進一步縮短。
+
+**驗證**：`workflow_dispatch` 手動觸發一次，確認回傳 200；後續需觀察數天的排程執行
+紀錄，確認頻率確實避免了休眠（本次修改尚未觀察到多次排程結果，屬於待追蹤項目）。
+
+**重新評估的條件**：若持續觀察後 app 仍會休眠（門檻比 12 小時短，或 6 小時頻率不夠），
+或使用者想要自訂網域／無休眠保證，則需要重新評估遷移到付費層或其他平台。
+
+---
+
+## 36. 公開授權採用 MIT License
+
+**日期**：2026-09-11　**狀態**：已完成
+
+**背景**：repo 公開後一直沒有 `LICENSE` 檔案，但 README 有一個「授權與注意事項」
+標題，內容其實是資安衛生與 robots.txt 遵循說明，不是授權條款——標題名不符實，
+容易讓看 repo 的人誤以為專案有明確授權，實際上什麼授權條件都沒有寫清楚。
+
+**決定**：新增 MIT License（`LICENSE` 檔案，著作權人 `SaintY-918`，年份 2026）。
+README 原本的「授權與注意事項」拆成兩段：「授權」（連到 `LICENSE`，並附上程式碼
+「現狀」提供、評分結果僅供參考的免責聲明）與「安全與使用限制」（原本的資安衛生、
+robots.txt 遵循內容）。
+
+**理由**：作為作品集，MIT 是最常見、對閱讀者與潛在雇主/協作者最沒有理解門檻的選擇——
+允許自由使用、修改、散布（含商業用途），只需要保留授權聲明。拆分標題是因為原標題
+底下沒有任何實際的授權條款，讀者若真的想知道能不能用這份程式碼，找不到答案。
+
+**驗證**：`scripts/check_docs.py` 執行通過，確認沒有引入新的文件不一致；grep 確認
+repo 內沒有其他地方引用舊的「授權與注意事項」錨點連結。
+
+---
+
+## 37. logging 設定集中到單一模組
+
+**日期**：2026-09-11　**狀態**：已完成
+
+**背景**：`logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")`
+這一行分別貼在 `src/main.py`、`src/scripts/probe_shopee_affiliate.py`、
+`src/scripts/probe_shopee_browser.py`、`src/scripts/suppress_initial_burst.py`
+四個進入點裡，格式若要調整需要記得同步改四個地方。
+
+**決定**：新增 `src/utils/logging_setup.py`，提供單一函式 `configure_logging()`，
+四個進入點改為呼叫它。其餘模組維持原本的 `logging.getLogger(__name__)`，不呼叫
+`basicConfig`——只有真正啟動 process 的進入點才決定 log 格式，這個分工不變。
+
+**理由**：格式只需要改一個地方；也讓「哪些檔案是可以獨立執行的進入點」這件事透過
+import 語意變得更明確（會呼叫 `configure_logging()` 的都是進入點）。
+
+**驗證**：`pytest tests/ -q --ignore=tests/e2e` 全過；`ruff check .` 全過（含抓到
+`src/scripts/probe_shopee_affiliate.py`、`probe_shopee_browser.py` 因此變成未使用
+的 `import logging`，已一併移除）；逐一 `import` 四個進入點模組確認不拋例外。

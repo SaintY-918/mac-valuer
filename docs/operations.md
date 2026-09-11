@@ -109,6 +109,10 @@ $env:SHOPEE_HEADLESS="false"
 
 完成滑動驗證後回終端機按 Enter。
 
+實測 session 壽命約 1-2 週（2026-09-11 觀察到 12.8 天後失效）。與其等 Discord
+回報失敗才處理，建議每 2 週主動重登一次；`scripts/run_local_scrape.ps1` 的排程
+日誌開頭會印出「Session file is N.X days old」，可以順手看一眼。
+
 ### 重驗 CI 可行性
 
 蝦皮政策若有變動，可手動觸發 `.github/workflows/shopee-ci-test.yml` 重新測試。
@@ -174,7 +178,7 @@ git ls-files | xargs grep -lniE '<你的email>|<內網IP前綴>|<你的使用者
 | `ModuleNotFoundError: No module named 'src'` | 不在專案根目錄，或直接跑了 `src/dashboard.py` |
 | Discord 顯示 ⛔ 某來源失敗 | 訊息裡有失敗原因；蝦皮多半是 session 過期 |
 | 排程 `LastTaskResult` 非 0 | 看 `logs/scrape_YYYY-MM-DD.log` |
-| Neon 連線 timeout | 網路可能擋 5432 埠，換行動網路測試 |
+| Neon 連線 timeout | 網路可能擋 5432 埠，換行動網路測試。`DBManager` 已設定 `connect_timeout=10`，失敗會在 10 秒內浮現，不會卡住整條 pipeline |
 | Dashboard 顯示舊版 | Streamlit Cloud 快取，用無痕視窗開 |
 
 ---

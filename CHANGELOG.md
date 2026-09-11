@@ -41,6 +41,36 @@
   強推、Streamlit app 的公開設定與 repo 公開是兩回事（含正確的 curl 驗證方式）。
 - **decisions #8 改寫為「公開前的資料衛生稽核」**，記錄稽核範圍、發現的分類與
   處理方式。
+- **`DBManager` 對 Postgres 連線加上 `connect_timeout=10`**。2026-09-11 一次 Neon
+  連線逾時卡住整條 pipeline 約 3.5 分鐘才回報失敗；實測加上逾時後同樣的不可達位址
+  在 10.1 秒內就會失敗（見 [decisions #33](docs/decisions.md#33-postgres-連線要設逾時不能信任-os-預設值)）。
+- **`.spec/specs/scraper/spec.md` 的 `MAX_LLM_CALLS_PER_RUN` 預設值改為 100**，
+  原本寫著 30，與程式碼、`.env.example` 的實際值不符。
+- **`docs/ptt-scraper-logic.md` 更新為現行的純 HTTP 抓取流程**，原文件仍描述已被
+  移除的 Playwright 內文爬取方式，且晶片關鍵字段落仍寫著會漏抓 M5／A 系列的舊清單。
+- **`requirements-dev.txt` 補上 `ruff`**，本機開發環境與 CI 實際安裝的套件一致。
+
+### 安全性
+- **CI 探測腳本不再把蝦皮登入 session 打包成公開 GitHub Actions artifact**。
+  `shopee-ci-test.yml` 原本會上傳 `shopee_state.json`（含活的登入 cookie），公開
+  repo 上任何人都能在 1 天保留期內下載這把「活的憑證」。改用新增的
+  `src/scripts/session_fingerprint.py` 印雜湊值與 cookie 名稱做前後比對，不再上傳
+  實際檔案（見 [decisions #34](docs/decisions.md#34-ci-探測腳本不再把蝦皮-session-打包成公開-artifact)）。
+
+### 新增
+- **`.github/workflows/keep-alive.yml`**：每 6 小時 ping 一次 Streamlit app，避免
+  Community Cloud 的 ~12 小時無流量休眠讓作品集訪客第一眼看到喚醒畫面
+  （見 [decisions #35](docs/decisions.md#35-streamlit-休眠的對策是排程-keep-alive不是換平台)）。
+- **`LICENSE`**：採用 MIT License，README 原本名不符實的「授權與注意事項」拆成
+  「授權」與「安全與使用限制」兩段（見 [decisions #36](docs/decisions.md#36-公開授權採用-mit-license)）。
+- **`.github/ISSUE_TEMPLATE/bug_report.md`**：極簡的 bug report 模板。
+- **`src/utils/logging_setup.py`**：集中 `logging.basicConfig` 設定，取代
+  `src/main.py` 與三個 `src/scripts/*` 進入點各自重複的同一行
+  （見 [decisions #37](docs/decisions.md#37-logging-設定集中到單一模組)）。
+- **`tests/test_api.py`、`tests/test_shopee_api.py`**：`api/main.py`（FastAPI 全部
+  端點、`_attach_vfm`、`_compute_thresholds`）與 `src/scrapers/shopee_api.py`（分潤
+  API 簽章、錯誤分類、L1 過濾、`MAX_LLM_CALLS_PER_RUN` 上限）原本零測試覆蓋，
+  合計新增 35 個測試案例。
 
 ---
 
