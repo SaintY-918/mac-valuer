@@ -67,9 +67,10 @@ _BENCH = CHIP_BENCHMARKS
 # without this file learning its name.
 _W = ScoringWeights()
 _ALL_FORM_KEYS = [k for keys in FORM_KEYS_BY_CLASS.values() for k in keys]
+DEFAULT_FORM_WEIGHTS = {k: _W.form_weight(k) for k in _ALL_FORM_KEYS}
 DEFAULT_SLIDERS = {
     "ram_mult": _W.ram_multiplier, "ssd_mult": _W.ssd_multiplier,
-    **{f"w_{k}": _W.form_weight(k) for k in _ALL_FORM_KEYS},
+    **{f"w_{k}": v for k, v in DEFAULT_FORM_WEIGHTS.items()},
 }
 
 # Which family values the 機型 filter offers in each mode. Laptop families are
@@ -581,6 +582,7 @@ if "min_price" not in st.session_state:
         "hide_defects": False,
         "source_filter": list(SOURCES),
         **DEFAULT_SLIDERS,
+        "form_weights": dict(DEFAULT_FORM_WEIGHTS),
         "page_num": 1,
     })
 
@@ -673,6 +675,7 @@ with st.sidebar:
     def _reset_vfm_weights():
         st.session_state.update({
             **DEFAULT_SLIDERS,
+            "form_weights": dict(DEFAULT_FORM_WEIGHTS),
         })
 
     with st.expander(":material/tune: VFM 評分設定"):
@@ -683,8 +686,18 @@ with st.sidebar:
         # session holds, so switching back does not lose an adjustment.
         st.caption(":material/laptop: 機型 × 螢幕組合加權" if mode == "laptop"
                    else ":material/desktop_windows: 機型加權")
+        # Streamlit drops a widget's session key once a run goes by without
+        # the widget. Switching modes hides one class's sliders, so on the
+        # next rerun their keys are gone — and reading them raised KeyError
+        # the first time someone switched to 桌機 and then touched a filter.
+        # `form_weights` is a plain dict, not a widget key, so it survives;
+        # each visible slider is seeded from it and written back to it, and
+        # the scorer reads only the dict.
+        _shadow: dict = st.session_state["form_weights"]
         for _key in FORM_KEYS_BY_CLASS[mode]:
+            st.session_state.setdefault(f"w_{_key}", _shadow[_key])
             st.slider(FORM_LABELS[_key], min_value=0.5, max_value=2.0, step=0.05, key=f"w_{_key}")
+            _shadow[_key] = float(st.session_state[f"w_{_key}"])
         st.button(":material/restart_alt: 重置評分設定", on_click=_reset_vfm_weights, use_container_width=True)
 
     st.divider()
@@ -698,6 +711,7 @@ with st.sidebar:
             "hide_defects": False,
             "source_filter": list(SOURCES),
             **DEFAULT_SLIDERS,
+            "form_weights": dict(DEFAULT_FORM_WEIGHTS),
             "page_num": 1,
         })
 
@@ -724,7 +738,7 @@ with st.sidebar:
 # backend cannot drift apart again.
 weights = ScoringWeights(
     ram_multiplier=ram_mult, ssd_multiplier=ssd_mult,
-    **{f"form_{k}": float(st.session_state[f"w_{k}"]) for k in _ALL_FORM_KEYS},
+    **{f"form_{k}": float(v) for k, v in st.session_state["form_weights"].items()},
 )
 
 _selected_sources: list = source_filter or []

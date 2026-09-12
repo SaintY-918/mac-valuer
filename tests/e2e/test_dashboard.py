@@ -300,3 +300,35 @@ def test_the_sidebar_changes_with_the_mode(fresh_page):
     text = sidebar.inner_text()
     assert "Mac Studio" in text and "Mac mini" in text
     assert 'Pro 16"' not in text
+
+
+def test_switching_modes_and_then_filtering_does_not_crash(fresh_page):
+    """Streamlit forgets a widget's key once a run passes without the widget.
+
+    The laptop sliders are not drawn in 桌機 mode, so on the rerun *after* the
+    switch their keys were gone, and building the weights from them raised
+    KeyError — the first thing anyone did on the live site after the deploy.
+    The switch itself passed the tests; it was the next click that failed.
+    """
+    _switch_to_desktops(fresh_page)
+    # Any second rerun will do. Hiding defects leaves both desktops in place,
+    # so wait on the checkbox rather than on the card count.
+    box = fresh_page.get_by_test_id("stSidebar").get_by_text("隱藏瑕疵品")
+    box.click()
+    fresh_page.wait_for_timeout(2_500)
+    body = fresh_page.locator("body").inner_text()
+    assert "KeyError" not in body and "encountered an error" not in body
+    assert len(_cards(fresh_page)) == len(DESKTOP_LISTINGS)
+    assert fresh_page.errors == []
+
+    # And back again: the laptop weights survived the round trip, so the
+    # scores are the backend's, not defaults or garbage.
+    fresh_page.get_by_text("筆電", exact=True).first.click()
+    fresh_page.wait_for_function(
+        f"document.querySelectorAll('.deal').length === {len(LISTINGS) - len(DEFECT_URLS)}",
+        timeout=30_000,
+    )
+    weights = ScoringWeights()
+    expected = {row["url"]: f"{vfm_from_mapping(row['spec'], weights):.0f}"
+                for row in LISTINGS if row["url"] not in DEFECT_URLS}
+    assert {c["href"]: c["score"] for c in _cards(fresh_page)} == expected
