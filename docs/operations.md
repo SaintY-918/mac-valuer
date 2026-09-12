@@ -33,6 +33,7 @@ python -m src.main --dry-run                # 只印出通過爬蟲過濾的物�
 | `python -m src.scripts.repair_specs` | 掃描不可能的規格值（試算，`--apply` 才寫入） |
 | `python -m src.scripts.revalidate_chips` | 以現行規則重新檢驗已存的晶片（試算，`--apply` 才寫入） |
 | `python -m src.scripts.revalidate_series` | 標題是 Mac mini／Studio 卻存成筆電 series 的列，清掉解析結果讓下次重解析（試算，`--apply` 才寫入） |
+| `python -m src.scripts.revalidate_defects` | 以現行規則重算每一列的瑕疵判定，不用 LLM（試算，`--apply` 才寫入） |
 | `python -m src.scripts.trigger_test` | 強制標記一筆物件，讓下次執行必定觸發推播 |
 | `python -m src.scripts.suppress_initial_burst` | 首次部署前抑制歷史物件的爆量推播 |
 

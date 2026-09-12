@@ -96,3 +96,44 @@ def test_defects_for_falls_back_for_rows_parsed_before_the_change():
 def test_defects_for_accepts_either_title_key():
     """get_filtered_deals renames title to original_title; both reach here."""
     assert defects_for({"title": "螢幕破裂"}) == defects_for({"original_title": "螢幕破裂"})
+
+
+# ── shop boilerplate: a grading legend defines a defect, it does not report one ──
+
+_LEGEND = """【商品名稱】Apple Macbook Neo 8G / 256G 13吋 全新品
+【新舊程度】全新品 / 100%新
+【保固狀態】原廠保固至2027年8月27日
+
+【商品狀態分級說明】
+
+ ● 100%新 = 全新未拆封新品
+ ●   95%新 = 機況如新品一般
+ ●   70%新 = 商品瑕疵或功能異常
+
+● 中古品若還在原廠保固期，日後若需維修買家需自行送原廠修理。"""
+
+
+def test_a_grading_legend_does_not_flag_a_sealed_machine():
+    """The seller pastes the same legend under every listing. A sealed Neo was
+    flagged 瑕疵 by the line that defines what 70%新 means."""
+    assert find_defects("Apple Macbook Neo 8G / 256G 13吋 全新品", None, _LEGEND) == []
+
+
+def test_a_real_fault_next_to_a_legend_is_still_found():
+    body = _LEGEND + "\n【品相描述】螢幕破裂，其餘功能正常"
+    assert "破裂" in find_defects("MacBook Air M2", None, body)
+
+
+@pytest.mark.parametrize("line", [
+    "70%新 = 商品瑕疵或功能異常",
+    "●   70%新：商品瑕疵或功能異常",
+    "100%新=全新未拆封新品",
+])
+def test_legend_lines_in_every_written_form_are_dropped(line):
+    assert find_defects(line) == []
+
+
+def test_the_items_own_grade_is_not_mistaken_for_a_legend():
+    """No "=" after the grade, so this line is about the item — and it says
+    70%新 with a fault, which is a fault."""
+    assert has_defect("【新舊程度】70%新，商品瑕疵")

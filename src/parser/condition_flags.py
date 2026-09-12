@@ -32,6 +32,18 @@ _GRADE_C_RE = re.compile(r"\bC\s*級")
 # inverts it.
 _NEGATIONS = ("無", "沒有", "沒", "不", "免", "未")
 
+# Shop boilerplate that defines a grading scale — "70%新 = 商品瑕疵或功能異常" —
+# names a defect without claiming the item has one. A sealed MacBook Neo was
+# flagged 瑕疵 because its seller pastes that legend under every listing. A
+# line that pairs a percentage grade with "=" or "：" is a definition, and
+# nothing on it describes this machine; it is removed before the scan. The
+# item's own grade ("【新舊程度】全新品 / 100%新") has no "=" and stays.
+_GRADE_LEGEND_LINE = re.compile(r"^.*\d{2,3}\s*%\s*新\s*[=＝:：].*$", re.M)
+
+
+def _without_boilerplate(text: str) -> str:
+    return _GRADE_LEGEND_LINE.sub("", text)
+
 
 def _negated(text: str, index: int) -> bool:
     """True when the term at `index` is preceded by a negation."""
@@ -49,7 +61,7 @@ def find_defects(*parts) -> list[str]:
     not real text rather than trusting the caller to clean it.
     """
     text = " ".join(
-        str(p) for p in parts
+        _without_boilerplate(str(p)) for p in parts
         if isinstance(p, str) and p.strip()
     )
     found = []
