@@ -38,12 +38,24 @@ CHIP_RE = re.compile(
 # site and well past the alert threshold. An advertised clock speed is the other
 # tell: Apple does not market Apple Silicon by GHz, and RAM and storage are
 # written "8G/256G", never "1.2G".
+#
+# "i7/" counts too: the i-series marker used to require a space or hyphen
+# after the digit, and "mac mini m1 2012 2014/i7/16g/500g ssd+ 4tb" — one shop
+# listing covering several machines, priced from the oldest — slipped past it
+# and became an M1 at NT$5,000, top of the whole site.
 INTEL_MARKERS = re.compile(
-    r"\bintel\b|\bcore\s*[mi]\b|\bi[3579][\s\-]|\b\d\.\d\s*G(Hz)?\b", re.I)
+    r"\bintel\b|\bcore\s*[mi]\b|\bi[3579](?=[\s\-/,，、]|$)|\b\d\.\d\s*G(Hz)?\b", re.I)
 
 # Apple Silicon starts with the November 2020 M1. A listing dated earlier cannot
 # have one, whatever its title says.
 APPLE_SILICON_FIRST_YEAR = 2020
+
+# A model year from before Apple Silicon, written in the title. The parsed
+# release_year already vetoes the chip (main.py), but the year can be inferred
+# from the chip and overwrite what the seller wrote — so the same veto has to
+# read the title directly. Bounded on both sides like CHIP_RE, so Apple's
+# A2338-style model numbers and "保固至2025" do not match.
+PRE_SILICON_YEAR = re.compile(r"(?<![A-Za-z0-9])(200[6-9]|201[0-9])(?![A-Za-z0-9])")
 
 
 # A model name that identifies its chip on its own, for titles that never name
@@ -78,8 +90,14 @@ def force_extract_chip(title: str) -> str | None:
 
     Returns None for an Intel machine rather than guessing: this project scores
     Apple Silicon, and CHIP_BENCHMARKS has no Intel entries to score against.
+
+    A title that names an Apple chip *and* an Intel-era signal (an i5/i7, a
+    2012 model year) is a mixed listing — typically a shop's "現貨" post that
+    sells several generations under one title, priced from the cheapest. There
+    is no single machine to score, so it is dropped rather than scored as the
+    best machine at the worst machine's price.
     """
-    if INTEL_MARKERS.search(title):
+    if INTEL_MARKERS.search(title) or PRE_SILICON_YEAR.search(title):
         return None
     best = None
     for family, gen, variant in CHIP_RE.findall(title.upper()):

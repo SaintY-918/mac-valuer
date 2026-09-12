@@ -24,7 +24,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.database.db_manager import DBManager, Deal
-from src.utils.chip_extract import APPLE_SILICON_FIRST_YEAR, INTEL_MARKERS, INVALID_CHIPS
+from src.utils.chip_extract import (
+    APPLE_SILICON_FIRST_YEAR,
+    INTEL_MARKERS,
+    INVALID_CHIPS,
+    PRE_SILICON_YEAR,
+)
 
 
 def _rejection(title: str, parsed: dict) -> str | None:
@@ -34,6 +39,8 @@ def _rejection(title: str, parsed: dict) -> str | None:
         return "no chip"
     if INTEL_MARKERS.search(title or ""):
         return f"Intel markers in title (stored chip {chip})"
+    if (m := PRE_SILICON_YEAR.search(title or "")):
+        return f"title carries the model year {m.group(1)}, before Apple Silicon (stored chip {chip})"
     year = parsed.get("release_year")
     try:
         if year and int(year) < APPLE_SILICON_FIRST_YEAR:

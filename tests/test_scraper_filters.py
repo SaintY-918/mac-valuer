@@ -84,6 +84,26 @@ def test_missing_stock_is_unknown_not_sold_out(shopee):
     assert shopee._listing_from_search_item(item) is not None
 
 
+def test_a_wide_variant_spread_is_not_one_machine(shopee):
+    """Lite mode sees only the cheapest variant's price. "mac mini m1 2012
+    2014 ..." priced 5,000 ~ 18,000 is several machines; the 5,000 belongs to
+    the 2012 one, and scoring the M1 at that price put it top of the site."""
+    item = _item(price=500000000, price_max=1800000000)
+    assert shopee._listing_from_search_item(item) is None
+
+
+def test_a_narrow_variant_spread_is_kept_and_annotated(shopee):
+    """256 GB against 512 GB of the same machine is a normal spread."""
+    listing = shopee._listing_from_search_item(_item(price=2350000000, price_max=2800000000))
+    assert listing is not None
+    assert "價格區間 23500 ~ 28000" in listing.body_content
+
+
+def test_a_single_price_carries_no_range_note(shopee):
+    listing = shopee._listing_from_search_item(_item(price=2350000000, price_max=2350000000))
+    assert "價格區間" not in listing.body_content
+
+
 def test_body_stays_within_the_l3_cap(shopee):
     listing = shopee._listing_from_search_item(_item(name="長標題" * 400))
     assert len(listing.body_content) <= 800

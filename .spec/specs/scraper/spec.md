@@ -104,6 +104,11 @@
   - 精簡模式下**不適用 Variant Flattening**（無 model 層級資料），一個商品產生一筆；
     亦無商品描述，`body_content` 由標題、價格標註與 `shop_location` 組成。
   - L2 在此模式改以搜尋回應的 `stock` 欄位判定；該欄位缺失時視為未知，予以保留。
+  - **多規格價差防護（`SHOPEE_MAX_VARIANT_SPREAD`，預設 1.5）**：精簡模式的 `price` 是
+    最便宜規格的價格。`price_max > price × 倍數` 代表同一標題底下是不同世代的機器
+    （實測 5,000 ~ 18,000 的「現貨 mac mini m1 2012 2014」），最低價不屬於標題領頭那台，
+    整筆略過並記 log。價差在倍數內者保留，並像 API 路徑一樣在 `body_content` 註記
+    「價格區間 X ~ Y 元」，讓讀的人與 LLM 知道這是底價。
   - 設為 `false` 可還原詳情頁模式（資料較完整，但觸發驗證碼的機率顯著較高）。
 - **規格處理 (Variant Flattening)**：僅適用於詳情頁模式。
   - 必須將包含多個 Models 的單一 Item 打平。

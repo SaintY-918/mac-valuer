@@ -414,3 +414,28 @@ def test_a_desktop_is_scored_by_both_entry_points_alike():
 def test_the_studio_only_chip_has_a_benchmark():
     """No laptop ships an M3 Ultra, so nothing needed it until desktops came in."""
     assert get_benchmark("M3 Ultra") > get_benchmark("M4 Max")
+
+
+# ── Mixed listings: one title, several machines ───────────────────────────────
+# A shop's "現貨" post covering several generations is priced from the cheapest.
+# "mac mini m1 2012 2014/i7/16g/500g ssd+ 4tb" at NT$5,000 was scored as an M1
+# from 2020 and topped the whole site at 1242. Nothing in it is one machine.
+
+@pytest.mark.parametrize("title", [
+    "真猛電腦 現貨mac mini m1 2012 2014/i7/16g/500g ssd+ 4tb",
+    "Mac mini M1 / i7 任選",                       # i7 followed by a slash, not a space
+    "MacBook Pro 13 M1 2019 2020 現貨",            # a pre-silicon model year in the title
+    "MacBook Air 2017 M1 都有",
+])
+def test_a_title_mixing_apple_silicon_with_intel_era_signals_is_not_scored(title):
+    assert force_extract_chip(title) is None
+
+
+@pytest.mark.parametrize("title", [
+    "MacBook Air M1 2020 8G/256G A2337",           # A2337 is a model number, not a year
+    "MacBook Pro 14 M3 Pro 2023 保固至2025",
+    "Mac mini M4 16G/256G 2024 全新",
+    "MacBook Air M2 2022 電池循環 201 次",           # a three-digit count is not a year
+])
+def test_ordinary_apple_silicon_titles_still_extract(title):
+    assert force_extract_chip(title) is not None

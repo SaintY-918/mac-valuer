@@ -74,6 +74,12 @@ class ShopeeScraper(BaseScraper):
         self._keywords = [
             k.strip() for k in os.getenv("SHOPEE_KEYWORDS", DEFAULT_KEYWORDS).split(",") if k.strip()
         ] or [DEFAULT_KEYWORDS]
+        # Lite mode sees one price per product: the cheapest variant. A shop
+        # listing that covers several machines ("mac mini m1 2012 2014 ...")
+        # therefore scores the newest machine at the oldest one's price. When
+        # the variants' prices spread further than this ratio they are not
+        # the same machine in different colours, and the row is dropped.
+        self._max_variant_spread = float(os.getenv("SHOPEE_MAX_VARIANT_SPREAD", "1.5"))
         self._current_calls = 0
 
     # ------------------------------------------------------------------
@@ -362,7 +368,22 @@ class ShopeeScraper(BaseScraper):
             logger.debug("L2: item %s out of stock, skipping", item_id)
             return None
 
+        # Multi-variant products: `price` is the cheapest option. A 16/256 and
+        # a 16/512 of the same machine sit within a few tens of percent; a
+        # spread beyond that means different machines under one title, and
+        # the cheapest price does not belong to the one the title leads with.
+        price_max = int(item.get("price_max") or 0) / 100000
+        if price_max > price * self._max_variant_spread:
+            logger.info("Variant spread: item %s priced %d~%d, more than %.1fx — "
+                        "not one machine, skipping", item_id, price, price_max,
+                        self._max_variant_spread)
+            return None
+
         body = f"【系統自動標註：此商品售價為 {int(price)} 元】\n{name}"
+        # Stated so the reader (and the LLM) knows the price is a floor, the
+        # same way the affiliate path annotates it.
+        if price_max > price:
+            body += f"\n（此商品有多種規格，價格區間 {int(price)} ~ {int(price_max)} 元）"
         # shop_location is the seller's city — better than making the LLM guess
         # a location out of a title that never mentions one.
         if (loc := (item.get("shop_location") or "").strip()):
