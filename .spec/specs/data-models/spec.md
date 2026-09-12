@@ -70,7 +70,7 @@
   「無法描述」一台 Neo。
 - **此類別不得帶權重屬性。** 它曾經帶過第三套與計分不一致的乘數，且無人使用。
   計分乘數只存在於 `ScoringWeights`。
-- iMac 與 Mac Pro 刻意不在其中（延後，見 decisions #38 的後續條目（待補））。
+- iMac 與 Mac Pro 刻意不在其中（延後，見 decisions #39）。
 
 ### `device_class`：由 `series` 推導，不另存
 

@@ -49,7 +49,7 @@ M4 Mac mini 16GB 以全新價 19,900 計算就約 740 分，超過筆電的警�
 | API `vfm_thresholds` | 按類回傳 `{"laptop": {...}, "desktop": {...}}` |
 | Discord 警報 | `ALERT_VFM_THRESHOLD` 只管筆電；桌機讀 `ALERT_VFM_THRESHOLD_DESKTOP`，**未設定即不推播** |
 
-被否決的兩條路（decisions #38 的後續條目（待補））：用 `form_mini` 之類的乘數把桌機分數壓到筆電尺度——
+被否決的兩條路（decisions #39）：用 `form_mini` 之類的乘數把桌機分數壓到筆電尺度——
 那是為了讓數字好看而捏造的係數，分數就不能被驗算；或桌機另寫一套公式——違反
 「公式只能有一份實作」，而且沒有任何因子在桌機上意義不同。
 

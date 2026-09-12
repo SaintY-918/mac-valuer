@@ -49,6 +49,15 @@
 - **`docs/ptt-scraper-logic.md` 更新為現行的純 HTTP 抓取流程**，原文件仍描述已被
   移除的 Playwright 內文爬取方式，且晶片關鍵字段落仍寫著會漏抓 M5／A 系列的舊清單。
 - **`requirements-dev.txt` 補上 `ruff`**，本機開發環境與 CI 實際安裝的套件一致。
+- **混合世代的貼文不再以最新機器之名、最舊機器之價評分**。「現貨mac mini m1 2012
+  2014/i7/…」售價 5,000 曾以 M1 拿到全站第一；`i7/` 現在算 Intel 標記，標題裡的
+  2006–2019 年份直接否決晶片（見 [decisions #40](docs/decisions.md#40-一個標題同時出現-apple-晶片與-intel-世代訊號就不是一台機器)）。
+- **賣場範本的「70%新 = 商品瑕疵」不再把全新品標成瑕疵**。分級說明的定義行在掃描前移除，
+  同一家店 6 筆已重算（見 [decisions #41](docs/decisions.md#41-賣場範本的分級說明不算機況)）。
+- **切到「桌機」後再點篩選會 `KeyError`**：Streamlit 會刪掉沒渲染的 widget 的 session key，
+  兩組形態權重改存在不綁 widget 的 session dict。
+- **手動執行時 cp950 主控台遇到標題裡的 emoji 會中斷**：`configure_logging()` 改用 UTF-8 輸出。
+- **`docs/skills/update_vfm_formula.md`** 指向不存在的 `openspec/` 路徑與舊欄位名，已改正。
 
 ### 安全性
 - **CI 探測腳本不再把蝦皮登入 session 打包成公開 GitHub Actions artifact**。
@@ -73,6 +82,16 @@
   端點、`_attach_vfm`、`_compute_thresholds`）與 `src/scrapers/shopee_api.py`（分潤
   API 簽章、錯誤分類、L1 過濾、`MAX_LLM_CALLS_PER_RUN` 上限）原本零測試覆蓋，
   合計新增 35 個測試案例。
+- **支援 Mac mini 與 Mac Studio**（見 [decisions #39](docs/decisions.md#39-支援-mac-mini-與-mac-studio同一份公式分開的級距)）：
+  `ModelSeries` 加兩個值，`device_class()` 由 `series` 推導；三個爬蟲共用
+  `detect_product()`（能分辨 `iPad mini`、單獨的 `Studio Display`）；同一份 VFM 公式加
+  `form_mini`／`form_studio`；色帶、中位數、API `vfm_thresholds`、Discord 門檻全部按類分開；
+  Dashboard 頂部「筆電｜桌機」模式切換；`ALERT_VFM_THRESHOLD_DESKTOP`（留空不推播）；
+  蝦皮瀏覽器路徑改讀 `SHOPEE_KEYWORDS`；`M3 Ultra` 基準分；`src/scripts/revalidate_series.py`
+  把存成筆電的桌機清掉重解析。桌機不要求 `screen_size`，否則 `needs_fix` 永遠成立。
+- **`src/scripts/revalidate_defects.py`**：以現行規則重算全庫的瑕疵判定，不用 LLM。
+- **`SHOPEE_MAX_VARIANT_SPREAD`**：蝦皮精簡模式的多規格價差門檻，超過即整筆略過
+  （見 [decisions #40](docs/decisions.md#40-一個標題同時出現-apple-晶片與-intel-世代訊號就不是一台機器)）。
 
 ---
 

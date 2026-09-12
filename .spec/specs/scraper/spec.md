@@ -10,7 +10,7 @@
 - `iPad mini` 不匹配（`mini` 前面不是 `mac`）；單獨的 `Studio Display` 不匹配（`studio`
   前面不是 `mac`），但各爬蟲的排除清單仍加上 `studio display` 以防 slug 兩詞並列。
 - 標題同時提到多個產品時取最先出現者（「MacBook 換 Mac mini」賣的是 MacBook）。
-- iMac 與 Mac Pro 刻意不在偵測範圍內（延後，見 decisions #38 的後續條目（待補））；Intel iMac／舊 mini
+- iMac 與 Mac Pro 刻意不在偵測範圍內（延後，見 decisions #39）；Intel iMac／舊 mini
   由既有的 `mentions_apple_silicon()` 與 `INTEL_MARKERS` 擋掉。
 
 ### 3.W PTT Scraper (MacShop 板)
