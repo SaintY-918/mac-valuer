@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+from src.models.mac_spec import device_class
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,8 @@ _MODEL_TYPE_SERIES = {
     "Air": ("Air",),
     "Pro": ("Pro 13", "Pro 14/16"),
     "Neo": ("Neo",),
+    "Mac mini": ("Mac mini",),
+    "Mac Studio": ("Mac Studio",),
 }
 
 
@@ -271,8 +275,13 @@ class DBManager:
         source: Optional[str] = None,
         screen_size: Optional[int] = None,
         model_type: Optional[str] = None,
+        device_class_filter: Optional[str] = None,
     ) -> List[Dict]:
-        """Query deals with optional filters. status/source filtered in SQL; others in Python."""
+        """Query deals with optional filters. status/source filtered in SQL; others in Python.
+
+        `device_class_filter` is "laptop" or "desktop"; derived from the stored
+        series on the way out, never stored itself.
+        """
         try:
             with self.Session() as session:
                 query = session.query(Deal).filter(Deal.parsed_json.isnot(None))
@@ -295,6 +304,8 @@ class DBManager:
                 if chip is not None and chip.lower() not in str(item.get("chip", "")).lower():
                     continue
                 if model_type and item.get("series") not in _MODEL_TYPE_SERIES.get(model_type, ()):
+                    continue
+                if device_class_filter and device_class(item.get("series")) != device_class_filter:
                     continue
                 if screen_size is not None:
                     ss = item.get("screen_size")

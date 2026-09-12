@@ -121,11 +121,44 @@ LISTINGS = [
         "defect": "legacy row, no stored defects",
         "legacy": True,
     },
+    {
+        # The tenth laptop: MIN_BAND_SAMPLE is 10, and the laptop side of the
+        # fixture has to be banded for the 全站-standard tests to mean anything.
+        "url": "https://example.test/shopee/10",
+        "source": "shopee",
+        "title": "MacBook Air 13 M4 16G/256G 2025 二手",
+        "body": "自用半年，功能正常。",
+        "spec": {"price": 33000, "chip": "M4", "ram_gb": 16, "ssd_gb": 256,
+                 "series": "Air", "screen_size": 13, "release_year": 2025},
+    },
 ]
 
 DEFECT_URLS = {row["url"] for row in LISTINGS if row.get("defect")}
 
-# Three per page turns nine fixture listings into three pages.
+# Desktops live in the same table but on the other side of the mode switch:
+# the page opens on 筆電, so every test above sees exactly LISTINGS, and these
+# only appear after clicking 桌機. Two of them, on purpose — below the
+# MIN_BAND_SAMPLE the page must still render, just without verdict bands.
+DESKTOP_LISTINGS = [
+    {
+        "url": "https://example.test/ptt/d1",
+        "source": "ptt",
+        "title": "[販售] Mac mini M4 16G/256G 2024 保內",
+        "body": "盒裝配件齊全。",
+        "spec": {"price": 16500, "chip": "M4", "ram_gb": 16, "ssd_gb": 256,
+                 "series": "Mac mini", "release_year": 2024},
+    },
+    {
+        "url": "https://example.test/carousell/d2",
+        "source": "carousell",
+        "title": "Mac Studio M2 Max 32G/512G 2023",
+        "body": "工作室汰換，功能正常。",
+        "spec": {"price": 45000, "chip": "M2 Max", "ram_gb": 32, "ssd_gb": 512,
+                 "series": "Mac Studio", "release_year": 2023},
+    },
+]
+
+# Three per page turns ten fixture listings into four pages.
 PAGE_SIZE = 3
 
 
@@ -143,7 +176,7 @@ def seeded_db(tmp_path_factory) -> str:
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     with sessionmaker(bind=engine)() as session:
-        for i, row in enumerate(LISTINGS):
+        for i, row in enumerate(LISTINGS + DESKTOP_LISTINGS):
             spec = dict(row["spec"])
             # Seeded the way the pipeline writes: defects are detected once,
             # while the body is still in hand, and stored with the spec. Rows

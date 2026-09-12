@@ -11,7 +11,7 @@ from tabulate import tabulate
 
 from src.calculator.score_engine import get_vfm_score
 from src.database.db_manager import DBManager
-from src.models.mac_spec import MacBookSpec
+from src.models.mac_spec import MacBookSpec, device_class
 from src.notifier import send_alert, send_heartbeat
 from src.parser.condition_flags import defects_for, find_defects
 from src.parser.llm_parser import (
@@ -67,16 +67,30 @@ def _parse_input_hash(title: str, body: str) -> str:
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
-def _read_alert_threshold() -> float:
-    raw = os.getenv("ALERT_VFM_THRESHOLD")
+def _read_alert_threshold(klass: str = "laptop") -> float | None:
+    """The alert threshold for one device class, or None to never alert it.
+
+    Laptop and desktop scores are not comparable: a box with no screen and no
+    battery is cheaper per benchmark point, so a current Mac mini at its retail
+    price already clears the laptop threshold (M4, 16 GB, NT$19,900 scores
+    about 740 against a default of 500). Desktops therefore read their own
+    variable, and until someone sets it — after seeing where their p75 lands —
+    they do not alert at all. Better silent than crying bargain every night.
+    """
+    # Literal names, so scripts/check_docs.py can see them read.
+    if klass == "laptop":
+        name, default = "ALERT_VFM_THRESHOLD", DEFAULT_ALERT_VFM_THRESHOLD
+        raw = os.getenv("ALERT_VFM_THRESHOLD")
+    else:
+        name, default = "ALERT_VFM_THRESHOLD_DESKTOP", None
+        raw = os.getenv("ALERT_VFM_THRESHOLD_DESKTOP")
     if raw is None or raw.strip() == "":
-        return DEFAULT_ALERT_VFM_THRESHOLD
+        return default
     try:
         return float(raw)
     except ValueError:
-        logger.warning("ALERT_VFM_THRESHOLD=%r is not a number; using default %s",
-                       raw, DEFAULT_ALERT_VFM_THRESHOLD)
-        return DEFAULT_ALERT_VFM_THRESHOLD
+        logger.warning("%s=%r is not a number; using default %s", name, raw, default)
+        return default
 
 
 def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scrape: bool = False):
@@ -178,7 +192,12 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
             or not p_json.get("price")
             or not p_json.get("ram_gb")
             or not p_json.get("ssd_gb")
-            or not p_json.get("screen_size")
+            # Laptops only. A desktop never has a screen, and requiring one
+            # would mark every Mac mini incomplete forever — the parse
+            # fingerprint below would stop the repeat LLM calls, but the row
+            # would still be flagged as needing work it can never finish.
+            or (device_class(p_json.get("series")) == "laptop"
+                and not p_json.get("screen_size"))
             # A missing year is not cosmetic: the scorer falls back to 2020,
             # which dates a current machine six years old and halves its VFM.
             or not p_json.get("release_year")
@@ -318,12 +337,14 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
             series_val = row.get("series")
             if series_val is None or not str(series_val).strip():
                 series_val = "Air"
+            klass = device_class(series_val)
 
             spec_obj = MacBookSpec(
                 chip=chip,
                 ram_gb=int(row["ram_gb"] or 8),
                 ssd_gb=int(row["ssd_gb"] or 256),
-                screen_size=float(row["screen_size"] or 13.3),
+                # The 13.3" fallback is a laptop default; a desktop has none.
+                screen_size=None if klass == "desktop" else float(row["screen_size"] or 13.3),
                 release_year=int(row["release_year"] or 2020),
                 series=str(series_val),
                 price=price,
@@ -333,15 +354,17 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
 
             final_results.append({
                 "Title": row["original_title"][:40] + "...",
+                "Class": klass,
                 "Chip": chip,
                 "RAM": f"{int(spec_obj.ram_gb)}G",
                 "SSD": f"{int(spec_obj.ssd_gb)}G",
-                "Size": f'{spec_obj.screen_size}"',
+                "Size": f'{spec_obj.screen_size}"' if spec_obj.screen_size else "",
                 "Year": int(spec_obj.release_year),
                 "Price": f"{int(price):,}",
                 "Region": str(row["location"]),
                 "VFM Score": round(score, 2),
                 "_url": row["url"],
+                "_device_class": klass,
                 "_source": row.get("source") or "?",
                 "_raw_title": row["original_title"],
                 "_raw_price": int(price),
@@ -406,9 +429,15 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
 
 def _run_notifier(db: DBManager, final_results: list[dict]) -> int:
     """Return the number of Discord alerts successfully sent this run."""
-    threshold = _read_alert_threshold()
+    thresholds = {"laptop": _read_alert_threshold("laptop"),
+                  "desktop": _read_alert_threshold("desktop")}
     sent = 0
+    skipped_classes: set[str] = set()
     for row in final_results:
+        threshold = thresholds.get(row.get("_device_class") or "laptop")
+        if threshold is None:
+            skipped_classes.add(row.get("_device_class") or "laptop")
+            continue
         score = row.get("_raw_score")
         if score is None or score <= threshold:
             continue
@@ -431,8 +460,11 @@ def _run_notifier(db: DBManager, final_results: list[dict]) -> int:
         if ok:
             db.update_last_alerted_price(url, price)
             sent += 1
+    if skipped_classes:
+        logger.info("Notifier: no threshold configured for %s — not alerting that class",
+                    ", ".join(sorted(skipped_classes)))
     if sent:
-        logger.info("Notifier: sent %d Discord alert(s) above threshold %.0f", sent, threshold)
+        logger.info("Notifier: sent %d Discord alert(s) (thresholds %s)", sent, thresholds)
     return sent
 
 

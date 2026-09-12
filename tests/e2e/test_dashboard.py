@@ -19,7 +19,7 @@ import re
 import pytest
 
 from src.calculator.score_engine import ScoringWeights, vfm_from_mapping
-from tests.e2e.conftest import DEFECT_URLS, LISTINGS, PAGE_SIZE
+from tests.e2e.conftest import DEFECT_URLS, DESKTOP_LISTINGS, LISTINGS, PAGE_SIZE
 
 # Widths worth supporting: the narrowest phone still in use, the common modern
 # phone, and a desktop window. 320 is the one that catches fixed-width mistakes.
@@ -232,3 +232,71 @@ def test_no_placeholder_or_error_text_leaked_into_the_page(page):
     for smell in ("Traceback", "NameError", "KeyError", "st.error", "nan", "None GB"):
         assert smell not in body, f"page text contains {smell!r}"
     assert not re.search(r"\bNaN\b", body)
+
+
+# ── 筆電｜桌機 is a mode, not a filter ───────────────────────────────────────
+# A Mac mini has no screen and no battery, so at the same chip it is cheaper
+# per benchmark point and its score runs higher. Ranked in one list it would
+# always sit on top; judged against the laptop median it would always read as
+# a bargain. The switch changes the whole page — rows, bands, sliders.
+
+def _switch_to_desktops(pg):
+    pg.get_by_text("桌機", exact=True).first.click()
+    pg.wait_for_function(
+        f"document.querySelectorAll('.deal').length === {len(DESKTOP_LISTINGS)}",
+        timeout=30_000,
+    )
+
+
+def test_the_page_opens_on_laptops_and_shows_no_desktop(page):
+    """Existing readers see exactly what they saw before desktops existed."""
+    hrefs = {c["href"] for c in _cards(page)}
+    assert not hrefs & {row["url"] for row in DESKTOP_LISTINGS}
+
+
+def test_switching_to_desktops_shows_only_desktops(fresh_page):
+    _switch_to_desktops(fresh_page)
+    cards = _cards(fresh_page)
+    assert {c["href"] for c in cards} == {row["url"] for row in DESKTOP_LISTINGS}
+    for card in cards:
+        assert "MacBook" not in card["model"]
+        # "Mac mini · M4", "Mac Studio · M2 Max" — the top card also carries the
+        # 最划算 badge text in front, so look for the name rather than the start.
+        assert "Mac mini" in card["model"] or "Mac Studio" in card["model"]
+        assert '"' not in card["model"]             # no screen size on a desktop
+
+
+def test_desktop_scores_are_the_backend_scores(fresh_page):
+    _switch_to_desktops(fresh_page)
+    weights = ScoringWeights()
+    expected = {row["url"]: f"{vfm_from_mapping(row['spec'], weights):.0f}"
+                for row in DESKTOP_LISTINGS}
+    assert {c["href"]: c["score"] for c in _cards(fresh_page)} == expected
+
+
+def test_a_thin_class_shows_scores_but_no_bands(fresh_page):
+    """Two listings cannot define a p75. The page says so instead of colouring
+    one of them 划算 and the other 偏貴 on the strength of a coin toss."""
+    _switch_to_desktops(fresh_page)
+    legend = fresh_page.locator(".vfm-legend").inner_text()
+    assert "桌機" in legend and "樣本不足" in legend
+    assert "划算" not in legend
+    assert "樣本不足" in fresh_page.locator(".deal-caption").inner_text()
+
+
+def test_the_laptop_standard_is_stated_as_the_laptop_standard(page):
+    """The label names the class the median comes from."""
+    assert "筆電" in page.locator(".vfm-legend").inner_text()
+    assert "筆電中位數" in page.locator(".deal-caption").inner_text()
+
+
+def test_the_sidebar_changes_with_the_mode(fresh_page):
+    sidebar = fresh_page.get_by_test_id("stSidebar")
+    assert "螢幕尺寸" in sidebar.inner_text()
+    _switch_to_desktops(fresh_page)
+    assert "螢幕尺寸" not in sidebar.inner_text()
+    sidebar.get_by_text("VFM 評分設定").click()
+    fresh_page.wait_for_timeout(500)
+    text = sidebar.inner_text()
+    assert "Mac Studio" in text and "Mac mini" in text
+    assert 'Pro 16"' not in text

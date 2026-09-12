@@ -210,11 +210,12 @@ def check_scoring_constants(errors: list[str]) -> None:
         errors.append("score-engine/spec.md: no form-factor row - the checker needs updating")
     else:
         want = [c[k] for k in
-                ("form_air13", "form_air15", "form_pro13", "form_pro14", "form_pro16")]
+                ("form_air13", "form_air15", "form_pro13", "form_pro14", "form_pro16",
+                 "form_mini", "form_studio")]
         if nums(r) != want:
             errors.append(
                 f"score-engine/spec.md quotes form multipliers {nums(r)}, code uses {want} "
-                f"(Air 13, Air 15, Pro 13, Pro 14, Pro 16)"
+                f"(Air 13, Air 15, Pro 13, Pro 14, Pro 16, Mac mini, Mac Studio)"
             )
 
     # The unknown-chip fallback. Anchored on get_benchmark() rather than on any

@@ -18,7 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.db_manager import Base, DBManager, Deal
-from src.main import _parse_input_hash
+from src.main import _parse_input_hash, _read_alert_threshold
 from src.notifier.discord_notify import _heartbeat_content
 from src.parser.llm_parser import _is_daily_quota_error
 
@@ -222,3 +222,29 @@ def test_an_abort_outranks_every_other_state():
                               "errors": {"carousell": "403"},
                               "alerts_sent": 2, "quota_exhausted": "429 ..."})
     assert msg.startswith("⛔ **每日爬蟲巡邏中止**")
+
+
+# ── desktops do not alert until someone says what a desktop bargain is ────────
+# A Mac mini has no screen and no battery, so at the same chip its score runs
+# well past the laptop threshold: an M4 at retail already reads about 740.
+
+def test_the_laptop_threshold_keeps_its_old_variable_and_default(monkeypatch):
+    monkeypatch.delenv("ALERT_VFM_THRESHOLD", raising=False)
+    assert _read_alert_threshold("laptop") == 500.0
+    monkeypatch.setenv("ALERT_VFM_THRESHOLD", "620")
+    assert _read_alert_threshold("laptop") == 620.0
+
+
+def test_desktops_have_no_threshold_until_one_is_set(monkeypatch):
+    monkeypatch.delenv("ALERT_VFM_THRESHOLD_DESKTOP", raising=False)
+    monkeypatch.setenv("ALERT_VFM_THRESHOLD", "500")
+    assert _read_alert_threshold("desktop") is None
+    monkeypatch.setenv("ALERT_VFM_THRESHOLD_DESKTOP", " ")
+    assert _read_alert_threshold("desktop") is None
+    monkeypatch.setenv("ALERT_VFM_THRESHOLD_DESKTOP", "900")
+    assert _read_alert_threshold("desktop") == 900.0
+
+
+def test_a_bad_desktop_threshold_falls_back_to_silence(monkeypatch):
+    monkeypatch.setenv("ALERT_VFM_THRESHOLD_DESKTOP", "lots")
+    assert _read_alert_threshold("desktop") is None

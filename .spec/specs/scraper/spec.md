@@ -1,3 +1,18 @@
+### 3.V 產品偵測：三個爬蟲共用一個規則
+
+`src/utils/chip_extract.py` 的 `detect_product(title)` 回傳 `macbook`／`mac mini`／
+`mac studio`／`None`。**所有爬蟲的「這是不是 Mac」判定一律經由它**——三個爬蟲曾各自
+用 `"macbook" in title` 判斷，第一台桌機進來就要在三個地方各改一次，正是 decisions #15
+「家族寫死在過濾邏輯裡」的老問題。
+
+- 只設前置邊界、不用 `\b`（中文緊鄰時 `\b` 失效，`Macmini賣` 要能匹配）；不設後置邊界，
+  因為賣家會寫 `MacbookPro` 連在一起。
+- `iPad mini` 不匹配（`mini` 前面不是 `mac`）；單獨的 `Studio Display` 不匹配（`studio`
+  前面不是 `mac`），但各爬蟲的排除清單仍加上 `studio display` 以防 slug 兩詞並列。
+- 標題同時提到多個產品時取最先出現者（「MacBook 換 Mac mini」賣的是 MacBook）。
+- iMac 與 Mac Pro 刻意不在偵測範圍內（延後，見 decisions #38 的後續條目（待補））；Intel iMac／舊 mini
+  由既有的 `mentions_apple_silicon()` 與 `INTEL_MARKERS` 擋掉。
+
 ### 3.W PTT Scraper (MacShop 板)
 **目標**：抓取 PTT MacShop 板的二手 Mac 讓售文。
 
@@ -27,8 +42,9 @@
   - 回應必須指定 `encoding = "utf-8"`：PTT 不一定在標頭宣告，
     交給 requests 猜會使全部中文變成亂碼。
 
-- **過濾機制**：標題須含機型名稱與晶片代號，且不含 `_EXCLUDE_TITLES`
-  （徵求、交換、Intel 世代）。
+- **過濾機制**：標題須通過 `detect_product()`（MacBook／Mac mini／Mac Studio）與
+  `mentions_apple_silicon()`，且不含 `_EXCLUDE_TITLES`（徵求、交換、Intel 世代）。
+  桌機不多花任何請求：feed 本來就包含它們，只是過去被 `"macbook"` 子字串擋掉。
 - **售出判定**：以 `_SOLD_KEYWORDS` 比對內文。
 - **失敗語意**：**feed 取不到任何 entry 時必須拋出例外。**
   feedparser 對網路失敗的回報方式是「一個沒有 entries 的物件」而非例外，
@@ -38,7 +54,7 @@
 ---
 
 ### 3.X Shopee Scraper (蝦皮)
-**目標**：抓取蝦皮上的二手 MacBook 拍賣資訊。
+**目標**：抓取蝦皮上的二手 Mac 拍賣資訊（預設關鍵字只搜 MacBook，見搜尋策略）。
 
 - **實作與繼承**：`ShopeeScraper` 繼承自 `BaseScraper`。
 - **雙路徑取得策略（Transport Dispatch）**：
@@ -65,7 +81,11 @@
 
     需要重新驗證時（例如蝦皮政策改變）可手動觸發該 workflow，它不寫入資料庫。
 - **搜尋策略**：
-  - 關鍵字：`二手 MacBook` (不依賴 facet id)；可經 `SHOPEE_KEYWORDS` 以逗號擴充。
+  - 關鍵字：`二手 MacBook` (不依賴 facet id)；可經 `SHOPEE_KEYWORDS` 以逗號擴充，
+    **瀏覽器路徑與 API 路徑讀同一個變數**。要收桌機就加 `二手 Mac mini,二手 Mac Studio`，
+    但**預設不加**：瀏覽器路徑每多一個關鍵字就多 3 次搜尋頁載入（同 session 內），
+    是否承擔這個被判為爬蟲的風險由跑本機排程的人決定。
+  - L1 另加 `detect_product()` 非 None：關鍵字搜尋會連同「Mac mini 支架」之類配件一起回來。
   - 存取控制：0 登入、隨機 User-Agent、隨機 Delay。
 - **失敗語意（Failure Semantics）**：
   - 爬取失敗**必須拋出例外**，不得回傳空 list。空 list 代表「本次無符合物件」，與「爬蟲壞掉」是不同事件，混淆會使 heartbeat 無法反映故障。
@@ -100,7 +120,7 @@
 ---
 
 ### 3.Y Carousell Scraper (旋轉拍賣)
-**目標**：抓取旋轉拍賣上的二手 MacBook。
+**目標**：抓取旋轉拍賣上的二手 Mac（MacBook、Mac mini、Mac Studio）。
 
 - **實作與繼承**：`CarousellScraper` 繼承 `BaseScraper`，`source="carousell"`。
 - **傳輸方式**：**純 HTTP，不使用瀏覽器**。分類頁與商品頁皆為伺服器端渲染，
@@ -131,8 +151,10 @@
 
 - **過濾機制**：
   1. **L1**：`5000 <= price <= 150000`，且標題與 slug 均不含排除字詞。
-  2. **標題必須含機型名稱**——僅比對 slug 不足：實測有 Honor 筆電以
+  2. **標題必須通過 `detect_product()`**——僅比對 slug 不足：實測有 Honor 筆電以
      「鋁合金類macbook」進入，另有賣家標題為「888」搭配 99999 佔位價。
+     slug 比對前先把連字號換成空白（`mac-mini-m4`）。桌機與筆電共用同一個
+     `CAROUSELL_MAX_ITEMS` 額度，不多發請求。
   3. **L2**：`offers.availability` 非 `InStock` 即視為售出；另以 `_SOLD_KEYWORDS` 比對描述作為後備。
   4. **L3**：`body_content` 上限 800 字元。
 

@@ -15,6 +15,7 @@ from src.models.mac_spec import (
     VALID_SSD_GB,
     MacBookSpec,
     ModelSeries,
+    device_class,
 )
 from src.parser.text_extractor import (
     extract_location,
@@ -22,6 +23,7 @@ from src.parser.text_extractor import (
     extract_spec_line,
     extract_warranty,
 )
+from src.utils.chip_extract import DESKTOP_PRODUCT_SERIES, detect_product
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +220,20 @@ def extract_specs_from_text(text: str) -> tuple:
         ssd = None
     return ram, ssd
 
+# Desktop release years by chip. Product facts, each a dated Apple launch:
+#   Mac mini   M1 (2020-11) · M2 / M2 Pro (2023-01) · M4 / M4 Pro (2024-10)
+#   Mac Studio M1 Max / M1 Ultra (2022-03) · M2 Max / M2 Ultra (2023-06)
+#              · M4 Max / M3 Ultra (2025-03)
+# Keyed on the full chip name because the tier decides the machine: an M3 Ultra
+# is a 2025 Studio while an M3 Max never shipped in one. A chip absent here
+# leaves the year as the seller wrote it.
+_DESKTOP_YEARS = {
+    "Mac mini": {"M1": 2020, "M2": 2023, "M2 PRO": 2023, "M4": 2024, "M4 PRO": 2024},
+    "Mac Studio": {"M1 MAX": 2022, "M1 ULTRA": 2022, "M2 MAX": 2023, "M2 ULTRA": 2023,
+                   "M4 MAX": 2025, "M3 ULTRA": 2025},
+}
+
+
 def infer_correct_year(item: dict, title: str) -> tuple:
     original_year = item.get("release_year")
     series = item.get("series", "Air") if item.get("series") else "Air"
@@ -228,6 +244,8 @@ def infer_correct_year(item: dict, title: str) -> tuple:
     # The A18 Pro shipped in exactly one Mac, so the chip alone fixes the year.
     if "a18" in chip.lower():
         inferred_year = 2026
+    elif device_class(series) == "desktop":
+        inferred_year = _DESKTOP_YEARS.get(str(series), {}).get(chip.strip(), original_year)
     elif "m2" in chip.lower() and "air" in series.lower() and "15" in title_lower:
         inferred_year = 2023
     elif "pro" in series.lower():
@@ -270,21 +288,21 @@ def parse_deal_llm(title: str, body_content: str) -> Optional[MacBookSpec]:
     spec_screen = extract_screen_size_from_text(spec_line) if spec_line else None
     regex_screen = title_screen or spec_screen or extract_screen_size_from_text(clean_body)
 
-    prompt = f"""You are an expert at parsing Taiwanese PTT MacBook second-hand listings.
+    prompt = f"""You are an expert at parsing Taiwanese second-hand Mac listings (MacBook, Mac mini, Mac Studio).
 Extract the following fields and return ONLY a JSON object matching this exact schema.
 If a field cannot be determined with confidence, set it to null — never guess.
 
 SCHEMA:
 {{
-  "chip":            "M1" | "M1 Pro" | "M1 Max" | "M2" | "M2 Pro" | "M2 Max" | "M3" | "M3 Pro" | "M3 Max" | "M4" | "M4 Pro" | "M4 Max" | null,
+  "chip":            <Apple Silicon name: "M<generation>" optionally followed by " Pro" / " Max" / " Ultra", e.g. "M1", "M2 Pro", "M4 Max", "M3 Ultra", "M5"; or "A18 Pro"> | null,
   "ram_gb":          <integer, e.g. 8 / 16 / 24 / 32> | null,
   "ssd_gb":          <integer in GB; 1TB = 1024, 2TB = 2048> | null,
-  "screen_size":     <float, e.g. 13.3 / 14.0 / 15.0 / 16.0> | null,
+  "screen_size":     <float, e.g. 13.3 / 14.0 / 15.0 / 16.0; laptops only — null for Mac mini / Mac Studio> | null,
   "release_year":    <4-digit integer> | null,
-  "series":          "Air" | "Pro 13" | "Pro 14/16" | null,
+  "series":          "Air" | "Pro 13" | "Pro 14/16" | "Neo" | "Mac mini" | "Mac Studio" | null,
   "price":           <integer, no commas; look for [售價] tag> | null,
   "location":        <single string with "/" separator, e.g. "台北/新竹"> | null,
-  "battery_health":  <integer 0-100, e.g. 89; only if explicitly stated> | null,
+  "battery_health":  <integer 0-100, e.g. 89; only if explicitly stated; laptops only — null for desktops> | null,
   "warranty_status": <string, e.g. "2025-12" or "已過保" or "AppleCare+"; only if explicit> | null,
   "condition":       <string, e.g. "全新未拆" / "九成新" / "輕微使用痕跡" / "明顯使用痕跡"; only if explicit> | null
 }}
@@ -297,6 +315,7 @@ If the variation name does not mention chip or memory, those fields are null —
 do NOT fall back to the base title for chip or memory.
 
 RULES:
+- series: "Mac mini" and "Mac Studio" are desktops. A listing for one has no screen_size and no battery_health.
 - price: must be a plain integer (no commas, no $ sign). Look for [售價] tag first.
 - ssd_gb: convert TB to GB (1T = 1024, 2T = 2048).
 - location: join multiple cities with "/" into one string.
@@ -372,13 +391,31 @@ BODY:
             item["screen_size"] = regex_screen
 
         is_spec_inferred = (not item.get("ram_gb") or not item.get("ssd_gb"))
+
+        # Series has to be settled before the year, because the year table is
+        # keyed on it. The title decides the desktops outright: the LLM has
+        # been seen labelling a Mac mini "Pro 13", and the old fallback below
+        # would have done the same for every desktop whose series came back
+        # null — 'Air' if the title says air, else 'Pro 13'.
+        if item.get("series") not in [s.value for s in ModelSeries]:
+            item["series"] = None
+        product = detect_product(clean_title)
+        if product in DESKTOP_PRODUCT_SERIES:
+            item["series"] = DESKTOP_PRODUCT_SERIES[product]
+        elif not item.get("series"):
+            item["series"] = "Air" if "air" in clean_title.lower() else "Pro 13"
+
+        # A desktop has neither. Cleared here rather than trusted to the prompt:
+        # the regex screen-size pass above reads the whole body, and a value it
+        # found would otherwise ride along into the score as a form factor.
+        if device_class(item["series"]) == "desktop":
+            item["screen_size"] = None
+            item["battery_health"] = None
+
         correct_year, was_inferred = infer_correct_year(item, clean_title)
         item["release_year"] = correct_year
         item["is_year_inferred"] = was_inferred
         item["is_spec_inferred"] = is_spec_inferred
-
-        if item.get("series") not in [s.value for s in ModelSeries]:
-            item["series"] = "Air" if "air" in clean_title.lower() else "Pro 13"
 
         return MacBookSpec(**item)
     except Exception as e:

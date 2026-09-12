@@ -14,6 +14,21 @@
 
 規則層先跑不是為了省 LLM 額度，而是**規則的結果可預測、可測試**；LLM 只負責處理規則涵蓋不到的自由文字。
 
+#### 5.X.1a 桌機（Mac mini／Mac Studio）
+
+- **`series` 由標題決定，不信 LLM 也不信舊回退。** `detect_product(title)` 判為桌機者，
+  `series` 直接寫成 `Mac mini`／`Mac Studio`。舊的回退 `"Air" if "air" in title else "Pro 13"`
+  會把每一台 Mac mini 存成 13 吋 Pro；它現在只在標題不是桌機、且 LLM 沒給合法值時才生效。
+- **桌機的 `screen_size` 與 `battery_health` 在清理階段強制設為 `None`**，不靠 prompt 自律：
+  螢幕尺寸的 regex 會掃整篇內文，賣家提到自己外接的 27 吋螢幕就會被當成機器尺寸。
+- 年份推論多一張桌機表（`_DESKTOP_YEARS`，以完整晶片名為 key）：mini M1→2020、
+  M2／M2 Pro→2023、M4／M4 Pro→2024；Studio M1 Max／Ultra→2022、M2 Max／Ultra→2023、
+  M4 Max／M3 Ultra→2025。表裡沒有的晶片維持賣家寫的年份。
+- prompt 的 `chip` 改為描述性規則（世代 + 可選的 Pro／Max／Ultra），不再列舉到 M4 為止——
+  與 score-engine spec「不得寫死世代清單」同一條規則。
+- **解析迴圈的 `needs_fix` 不對桌機要求 `screen_size`**（`src/main.py`）。否則每一筆桌機
+  永遠是「不完整」：解析指紋擋得住重複的 LLM 呼叫，但那是靠第二道防線硬撐。
+
 #### 5.X.2 RAM／SSD 抽取規則（`extract_specs_from_text`）
 
 - **只接受 Apple 實際出貨的規格**：

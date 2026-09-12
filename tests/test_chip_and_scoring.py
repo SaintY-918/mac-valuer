@@ -18,9 +18,9 @@ from src.calculator.score_engine import (
     nominal_inches,
     vfm_from_mapping,
 )
-from src.models.mac_spec import MacBookSpec
+from src.models.mac_spec import MacBookSpec, device_class
 from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark
-from src.utils.chip_extract import force_extract_chip
+from src.utils.chip_extract import detect_product, force_extract_chip
 
 # ── Chip extraction ───────────────────────────────────────────────────────────
 
@@ -350,3 +350,67 @@ def test_an_explicit_chip_always_beats_the_model_name():
 
 def test_an_intel_marker_still_wins_over_the_model_name():
     assert force_extract_chip("Intel MacBook Neo") is None
+
+
+# ── Desktops: Mac mini and Mac Studio ─────────────────────────────────────────
+# One class of thing — a box with no screen and no battery — that differs
+# within itself the way an Air differs from a Pro. Everything that used to
+# assume "a Mac is a laptop" is checked here.
+
+@pytest.mark.parametrize("title, expected", [
+    ("Mac mini M4 16G/256G",              "mac mini"),
+    ("[賣機] Mac mini M2 Pro 16G/512G",    "mac mini"),
+    ("Macmini賣 M1",                       "mac mini"),      # CJK right after, no space
+    ("MAC STUDIO M2 Ultra 64G/1TB",       "mac studio"),
+    ("Mac Studio 含 Studio Display",       "mac studio"),    # the monitor is context
+    ("MacbookPro 14 M3",                  "macbook"),       # one word, as sellers write it
+    ("MacBook 換 Mac mini",               "macbook"),       # first named wins
+    ("iPad mini 6 64G",                   None),            # not a Mac
+    ("Studio Display 27吋",                None),            # a monitor
+    ("iMac 24 M1",                        None),            # deferred, see decisions
+    ("Windows 筆電 類macbook 外型",         "macbook"),       # caught by the exclusion lists, not here
+])
+def test_detect_product_tells_the_macs_apart(title, expected):
+    assert detect_product(title) == expected
+
+
+@pytest.mark.parametrize("series, expected", [
+    ("Mac mini", "desktop"), ("Mac Studio", "desktop"),
+    ("Air", "laptop"), ("Pro 13", "laptop"), ("Pro 14/16", "laptop"), ("Neo", "laptop"),
+    (None, "laptop"), ("", "laptop"), (float("nan"), "laptop"),
+])
+def test_device_class_is_derived_from_the_series(series, expected):
+    """Missing means laptop: every row written before desktops existed was one."""
+    assert device_class(series) == expected
+
+
+@pytest.mark.parametrize("series, key", [("Mac mini", "mini"), ("Mac Studio", "studio")])
+@pytest.mark.parametrize("screen", [None, "", float("nan"), 13.3, 27.0])
+def test_a_desktop_takes_its_own_form_factor_whatever_the_screen_says(series, key, screen):
+    """The 13.3" fallback for a missing screen used to file every desktop under
+    pro13; and a stray screen size read from the body must not move it either."""
+    assert form_factor_key(series, screen) == key
+
+
+def test_a_desktop_prints_no_screen_size():
+    assert nominal_inches("Mac mini", None) is None
+    assert nominal_inches("Mac Studio", 27) is None
+
+
+def test_desktop_weights_are_read_from_the_same_place_as_laptop_weights():
+    w = ScoringWeights(form_mini=1.3, form_studio=1.4)
+    assert w.form_weight("mini") == 1.3
+    assert w.form_weight("studio") == 1.4
+
+
+def test_a_desktop_is_scored_by_both_entry_points_alike():
+    row = {"chip": "M4", "ram_gb": 16, "ssd_gb": 256, "series": "Mac mini",
+           "release_year": 2024, "price": 19900}
+    weights = ScoringWeights()
+    assert vfm_from_mapping(row, weights) == pytest.approx(
+        get_vfm_score(MacBookSpec(**row), weights), abs=0.01)
+
+
+def test_the_studio_only_chip_has_a_benchmark():
+    """No laptop ships an M3 Ultra, so nothing needed it until desktops came in."""
+    assert get_benchmark("M3 Ultra") > get_benchmark("M4 Max")

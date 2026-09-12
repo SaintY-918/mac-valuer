@@ -15,7 +15,8 @@ except ImportError:
 from playwright.async_api import BrowserContext, Page
 
 from src.scrapers.base import BaseScraper, RawListing
-from src.scrapers.shopee_api import ShopeeAffiliateScraper, credentials_configured
+from src.scrapers.shopee_api import DEFAULT_KEYWORDS, ShopeeAffiliateScraper, credentials_configured
+from src.utils.chip_extract import detect_product
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,8 @@ class ShopeeSessionExpired(RuntimeError):
     """
 
 
-_EXCLUDE_TITLES = ["殼", "膜", "零件機", "報廢", "充電線", "保護貼", "貼膜", "支架", "轉接"]
+_EXCLUDE_TITLES = ["殼", "膜", "零件機", "報廢", "充電線", "保護貼", "貼膜", "支架", "轉接",
+                   "Studio Display", "studio display"]
 _ITEM_URL_RE = re.compile(r"/product/(\d+)/(\d+)")
 
 # L1 gatekeeper bounds, named once so the candidate filter and the per-item
@@ -65,6 +67,13 @@ class ShopeeScraper(BaseScraper):
         # on them), so skipping details costs description and per-variant pricing
         # but cuts the request count to the three search pages.
         self._skip_details = os.getenv("SHOPEE_SKIP_DETAILS", "true").lower() == "true"
+        # Same variable the affiliate path reads. Each keyword costs three
+        # search-page loads in one session, and the default stays at one
+        # keyword: adding "二手 Mac mini" and "二手 Mac Studio" is a decision for
+        # whoever runs the local schedule, taken by editing .env, not by code.
+        self._keywords = [
+            k.strip() for k in os.getenv("SHOPEE_KEYWORDS", DEFAULT_KEYWORDS).split(",") if k.strip()
+        ] or [DEFAULT_KEYWORDS]
         self._current_calls = 0
 
     # ------------------------------------------------------------------
@@ -138,7 +147,8 @@ class ShopeeScraper(BaseScraper):
                 page = await context.new_page()
 
                 # Page 1: initial fetch + login check
-                items_p1 = await self._search_items(page, newest=0)
+                first_kw = self._keywords[0]
+                items_p1 = await self._search_items(page, first_kw, newest=0)
 
                 if "login" in page.url or not items_p1:
                     if self._headless:
@@ -159,13 +169,16 @@ class ShopeeScraper(BaseScraper):
                     except EOFError:
                         logger.warning("Non-interactive terminal — waiting 60 s for login")
                         await asyncio.sleep(60)
-                    items_p1 = await self._search_items(page, newest=0)
+                    items_p1 = await self._search_items(page, first_kw, newest=0)
 
-                # Pages 2–3: same session, sequential navigation
+                # Pages 2–3, then every further keyword: same session,
+                # sequential navigation.
                 all_items: list[dict] = list(items_p1)
-                for newest in (60, 120):
+                remaining = [(first_kw, n) for n in (60, 120)]
+                remaining += [(kw, n) for kw in self._keywords[1:] for n in (0, 60, 120)]
+                for kw, newest in remaining:
                     await asyncio.sleep(random.uniform(3, 7))
-                    page_items = await self._search_items(page, newest=newest)
+                    page_items = await self._search_items(page, kw, newest=newest)
                     all_items.extend(page_items)
 
                 await page.close()
@@ -184,11 +197,14 @@ class ShopeeScraper(BaseScraper):
                         unique_items.append(item)
                 logger.info("Pagination: %d total items, %d unique after dedup", len(all_items), len(unique_items))
 
-                # L1 Gatekeeper: price range + title exclusion
+                # L1 Gatekeeper: price range + title exclusion + names a Mac.
+                # The search is by keyword, so "二手 Mac mini" also returns
+                # stands and hubs for one; the product check drops those.
                 candidates = [
                     item for item in unique_items
                     if L1_MIN_PRICE <= item.get("price", 0) / 100000 <= L1_MAX_PRICE
                     and not any(w in item.get("name", "") for w in _EXCLUDE_TITLES)
+                    and detect_product(item.get("name", "")) is not None
                 ]
                 logger.info("L1 filter: %d / %d items passed", len(candidates), len(unique_items))
 
@@ -231,7 +247,8 @@ class ShopeeScraper(BaseScraper):
     # Search page: response interception + DOM fallback
     # ------------------------------------------------------------------
 
-    async def _search_items(self, page: Page, newest: int = 0) -> list[dict]:
+    async def _search_items(self, page: Page, keyword: str = DEFAULT_KEYWORDS,
+                            newest: int = 0) -> list[dict]:
         intercepted: list[dict] = []
 
         async def handle_response(response):
@@ -246,7 +263,7 @@ class ShopeeScraper(BaseScraper):
 
         page.on("response", handle_response)
 
-        url = "https://shopee.tw/search?keyword=" + urllib.parse.quote("二手 MacBook") + f"&newest={newest}"
+        url = "https://shopee.tw/search?keyword=" + urllib.parse.quote(keyword) + f"&newest={newest}"
         logger.info("Navigating to: %s", url)
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(3)  # allow background API responses to fire

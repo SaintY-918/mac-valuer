@@ -30,16 +30,19 @@
 
 解析結果。**除了兩個推論旗標，每個欄位都是 `Optional`，而且這是刻意的。**
 
+名稱是歷史遺留：它涵蓋所有 Mac（MacBook、Mac mini、Mac Studio），不只筆電。
+改名會動到十幾個檔案與所有 spec，換不到任何行為，所以不改。
+
 | 欄位 | 型別 | 備註 |
 |---|---|---|
-| `chip` | str? | 例：`M1`、`M2 Pro`、`A18 Pro` |
+| `chip` | str? | 例：`M1`、`M2 Pro`、`A18 Pro`、`M3 Ultra` |
 | `ram_gb` / `ssd_gb` | int? | 單位 GB |
-| `screen_size` | float? | 英吋 |
+| `screen_size` | float? | 英吋。**桌機一律 `None`**，解析清理階段強制清空 |
 | `release_year` | int? | 缺值時計分回退 2020 |
 | `series` | `ModelSeries`? | |
 | `price` | float? | |
 | `location` | str? | |
-| `battery_health` | int? | 百分比 |
+| `battery_health` | int? | 百分比。**桌機一律 `None`** |
 | `warranty_status` / `condition` | str? | |
 | `is_year_inferred` | bool | 年份為推得而非讀得 |
 | `is_spec_inferred` | bool | 規格為推得而非讀得 |
@@ -60,13 +63,31 @@
 
 ### `ModelSeries`
 
-`Air` / `Pro 13` / `Pro 14/16` / `Neo` 四個值。
+`Air` / `Pro 13` / `Pro 14/16` / `Neo` / `Mac mini` / `Mac Studio` 六個值。
 
 - **新機型必須先加進這個 enum**，否則 pydantic 會拒絕整筆解析結果，
   該機型會整批消失。MacBook Neo（2026-03）就是這樣被丟掉的：解析器
   「無法描述」一台 Neo。
 - **此類別不得帶權重屬性。** 它曾經帶過第三套與計分不一致的乘數，且無人使用。
   計分乘數只存在於 `ScoringWeights`。
+- iMac 與 Mac Pro 刻意不在其中（延後，見 decisions #38 的後續條目（待補））。
+
+### `device_class`：由 `series` 推導，不另存
+
+```
+laptop  ── Air / Pro 13 / Pro 14/16 / Neo
+desktop ── Mac mini / Mac Studio
+```
+
+- Mac mini 與 Mac Studio 是**同一類東西**（沒有螢幕、沒有電池的主機），彼此的差異
+  像 Air 與 Pro 一樣落在 `series` 這一層，不是各自一類。
+- `device_class(series)` 是唯一的判定入口，`DESKTOP_SERIES` 是唯一的清單。
+  **不得把 `device_class` 存進 `parsed_json`**——它是 `series` 的函數，存第二份就是
+  第二個會漂移的來源。
+- `None`、`NaN`、空字串一律視為 `laptop`：桌機出現之前寫入的每一列都是筆電。
+- 用到它的地方：計分的形態加成（`form_factor_key`）、解析迴圈的必要欄位
+  （桌機不要求 `screen_size`）、Dashboard 的模式切換、API 的 `device_class` 參數、
+  Discord 的警報門檻。
 
 ### `VALID_RAM_GB` / `VALID_SSD_GB`
 
@@ -90,10 +111,18 @@ Apple 實際出貨的配置，放在模型層而非解析器裡，因為**解析
 | `form_pro13` | 1.00 | |
 | `form_pro14` | 1.18 | |
 | `form_pro16` | 1.22 | |
+| `form_mini` | 1.00 | `series == Mac mini` |
+| `form_studio` | 1.05 | `series == Mac Studio` |
 
 - **形態依螢幕尺寸切分，不是只看 `series`。** 15 吋 Air 與 16 吋 Pro 相對於
   小尺寸手足有溢價，合併會失去這個資訊。`form_factor_key(series, screen_size)`
   是這條規則唯一存在的地方。
+- **桌機先於尺寸判定。** `form_factor_key` 先問 `device_class`，桌機直接回
+  `mini`／`studio`；否則缺尺寸時的 13.3 吋預設會把每台 Mac mini 歸進 `pro13`。
+- **桌機乘數不是用來讓桌機分數與筆電對齊的。** 沒有螢幕與電池的主機每千元買到的
+  效能天生較高，分數會比筆電高一截，這是事實不是誤差。兩類各自對自己的中位數比較
+  （見 `score-engine/spec.md`）。
+- `FORM_KEYS_BY_CLASS` 與 `FORM_LABELS` 由此推導，Dashboard 一次只顯示一類的滑桿。
 - **`DEFAULT_WEIGHTS` 是一個具名的共享實例。** 預設引數在定義時求值一次，
   所以 `weights=ScoringWeights()` 會讓所有呼叫端共用同一個可變物件——
   具名是為了讓這件事變成明示而非意外。
@@ -114,4 +143,5 @@ Apple 實際出貨的配置，放在模型層而非解析器裡，因為**解析
    （例如 MacBook Neo → A18 Pro），該對照必須：明示只在完全抽不到時套用、
    明示它是有到期日的產品事實、並記下失效時該改哪裡。
 3. **規則改變時，已存的資料不會自己跟上**（decisions #23）。
-   改動任何影響既有列的判定後，以 `src/scripts/revalidate_chips.py` 重新檢驗。
+   改動任何影響既有列的判定後，以 `src/scripts/revalidate_chips.py`（晶片）或
+   `src/scripts/revalidate_series.py`（機型／桌機）重新檢驗。

@@ -31,6 +31,8 @@ python -m src.main --dry-run                # 只印出通過爬蟲過濾的物�
 |---|---|
 | `python -m src.scripts.check_db` | 目前連的是哪個資料庫、各來源筆數、最後更新時間（密碼遮罩） |
 | `python -m src.scripts.repair_specs` | 掃描不可能的規格值（試算，`--apply` 才寫入） |
+| `python -m src.scripts.revalidate_chips` | 以現行規則重新檢驗已存的晶片（試算，`--apply` 才寫入） |
+| `python -m src.scripts.revalidate_series` | 標題是 Mac mini／Studio 卻存成筆電 series 的列，清掉解析結果讓下次重解析（試算，`--apply` 才寫入） |
 | `python -m src.scripts.trigger_test` | 強制標記一筆物件，讓下次執行必定觸發推播 |
 | `python -m src.scripts.suppress_initial_burst` | 首次部署前抑制歷史物件的爆量推播 |
 
@@ -98,6 +100,25 @@ python -m src.scripts.probe_shopee_affiliate --keyword "MacBook Pro 二手" --pa
 
 腳本會直接給出「值得切換」或「覆蓋率不足，維持瀏覽器爬蟲」的判斷。
 
+### 收桌機（Mac mini／Mac Studio）
+
+PTT 與旋轉拍賣已自動收桌機，不多發請求。蝦皮是關鍵字搜尋，預設只搜 `二手 MacBook`；
+要收桌機在 `.env` 加關鍵字，**不需要改程式**：
+
+```
+SHOPEE_KEYWORDS=二手 MacBook,二手 Mac mini,二手 Mac Studio
+```
+
+瀏覽器路徑每個關鍵字 3 次搜尋頁載入，三個關鍵字就是 9 次——仍遠低於曾觸發驗證碼的
+33 次，但 session 失效風險略增。建議桌機上線第一週先只靠 PTT 與旋轉拍賣，確認解析
+沒問題再開蝦皮關鍵字。
+
+首晚的新桌機物件可能超過 `MAX_REPAIR_CALLS_PER_RUN`（50），多出來的會自動留到隔天，
+不會撞 Gemini 每日 500 次。
+
+桌機上線後跑一次 `python -m src.scripts.revalidate_series`：蝦皮的 MacBook 搜尋以前
+就會夾帶少數 Mac mini，它們被存成了 `Pro 13`。
+
 ### session 過期
 
 蝦皮會週期性要求重新驗證。headless 排程遇到驗證碼必定失敗，需手動處理一次：
@@ -140,6 +161,17 @@ python -m src.scripts.export_shopee_session --clip   # 直接複製到剪貼簿
 | GitHub Secret | 單筆 48 KB（`SHOPEE_STATE_B64` 因此要 gzip） |
 
 `GEMINI_RPM` 預設 13 而非 15，是刻意留餘裕——貼著上限跑，稍有抖動就會吃到 429。
+
+### 桌機的 Discord 警報門檻
+
+`ALERT_VFM_THRESHOLD`（預設 500）只管筆電。桌機沒有螢幕與電池，同一顆晶片的分數
+天生高一截——M4 Mac mini 16GB 以全新價 19,900 計算就約 740 分——沿用 500 會每晚狂響。
+
+桌機讀 `ALERT_VFM_THRESHOLD_DESKTOP`，**留空＝不推播**。校準步驟：
+
+1. 桌機上線後累積約兩週資料。
+2. 開 Dashboard 切到「桌機」，看圖例上的「划算 ≥ N」（即桌機 p75）。
+3. 把 N 或略高的值填進 `ALERT_VFM_THRESHOLD_DESKTOP`（本機 `.env` 與 GitHub secret）。
 
 ### 更換 Gemini 模型
 

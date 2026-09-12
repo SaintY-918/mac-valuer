@@ -28,12 +28,13 @@ def client():
     return TestClient(app)
 
 
-def _seed(url, price, chip="M3", ram_gb=16, ssd_gb=512, status="available"):
+def _seed(url, price, chip="M3", ram_gb=16, ssd_gb=512, status="available",
+          series="Pro 14/16", screen_size=14.0):
     db = DBManager()
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     parsed = {
-        "chip": chip, "ram_gb": ram_gb, "ssd_gb": ssd_gb, "screen_size": 14.0,
-        "release_year": 2023, "series": "Pro 14/16", "price": price, "location": "台北",
+        "chip": chip, "ram_gb": ram_gb, "ssd_gb": ssd_gb, "screen_size": screen_size,
+        "release_year": 2023, "series": series, "price": price, "location": "台北",
     }
     with db.Session() as s:
         s.add(Deal(url=url, source="ptt", status=status, title=url,
@@ -54,7 +55,11 @@ def test_deals_empty_db_returns_default_thresholds(client):
     body = resp.json()
     assert body["count"] == 0
     assert body["deals"] == []
-    assert body["vfm_thresholds"] == {"p50": 250.0, "p75": 350.0}
+    # One band per device class: a desktop is never judged against laptops.
+    assert body["vfm_thresholds"] == {
+        "laptop": {"p50": 250.0, "p75": 350.0},
+        "desktop": {"p50": 250.0, "p75": 350.0},
+    }
 
 
 def test_deals_lists_seeded_available_deal_with_vfm_score(client):
@@ -134,3 +139,43 @@ def test_score_calculate_rejects_invalid_series(client):
         "spec": {"chip": "M3", "price": 30000, "series": "Not A Real Series"},
     })
     assert resp.status_code == 422
+
+
+# ── Desktops ──────────────────────────────────────────────────────────────────
+
+def test_device_class_filter_separates_desktops_from_laptops(client):
+    _seed("https://example.com/laptop", price=30000)
+    _seed("https://example.com/mini", price=15000, chip="M2", series="Mac mini", screen_size=None)
+
+    everything = client.get("/api/deals").json()
+    assert everything["count"] == 2
+    assert {d["device_class"] for d in everything["deals"]} == {"laptop", "desktop"}
+
+    desktops = client.get("/api/deals", params={"device_class": "desktop"}).json()
+    assert [d["url"] for d in desktops["deals"]] == ["https://example.com/mini"]
+
+    laptops = client.get("/api/deals", params={"device_class": "laptop"}).json()
+    assert [d["url"] for d in laptops["deals"]] == ["https://example.com/laptop"]
+
+
+def test_thresholds_are_cut_per_class(client):
+    """A Mac mini's score must not move the laptop band, and vice versa."""
+    _seed("https://example.com/l1", price=30000)
+    _seed("https://example.com/l2", price=40000)
+    _seed("https://example.com/d1", price=12000, chip="M2", series="Mac mini", screen_size=None)
+
+    body = client.get("/api/deals").json()
+    laptop_scores = sorted(d["vfm_score"] for d in body["deals"] if d["device_class"] == "laptop")
+    desktop_scores = [d["vfm_score"] for d in body["deals"] if d["device_class"] == "desktop"]
+    t = body["vfm_thresholds"]
+    assert t["laptop"]["p50"] == pytest.approx(sum(laptop_scores) / 2, abs=0.01)
+    assert t["desktop"]["p50"] == pytest.approx(desktop_scores[0], abs=0.01)
+
+
+def test_a_desktop_scores_without_a_screen_size(client):
+    resp = client.post("/api/score/calculate", json={
+        "spec": {"chip": "M4", "ram_gb": 16, "ssd_gb": 256, "release_year": 2024,
+                 "series": "Mac mini", "price": 19900},
+    })
+    assert resp.status_code == 200
+    assert resp.json()["vfm_score"] > 0

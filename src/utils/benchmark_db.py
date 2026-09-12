@@ -13,6 +13,8 @@ from typing import Dict
 #   M5 Pro  28,436  https://www.notebookcheck.net/Apple-M5-Pro-18-Core-Processor-Benchmarks-and-Specs.1242671.0.html
 #   M5 Max  29,233  https://www.macrumors.com/2026/03/05/m5-max-geekbench-benchmarks/
 #   A18 Pro  8,668  https://browser.geekbench.com/v6/cpu/16994247
+#   M3 Ultra 27,749 https://browser.geekbench.com/v6/cpu/10919322 (single upload; the
+#            Geekbench Browser average page was unreachable when this was added)
 CHIP_BENCHMARKS: Dict[str, int] = {
     "M1": 8500,
     "M1 Pro": 12000,
@@ -25,6 +27,9 @@ CHIP_BENCHMARKS: Dict[str, int] = {
     "M3": 11500,
     "M3 Pro": 15500,
     "M3 Max": 21000,
+    # Mac Studio (2025) only. There is no laptop with this chip, so it was
+    # never needed until desktops came in.
+    "M3 Ultra": 27749,
     "M4": 14500,
     "M4 Pro": 22000,
     "M4 Max": 26000,

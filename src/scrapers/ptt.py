@@ -26,7 +26,7 @@ import feedparser
 import requests
 
 from src.scrapers.base import BaseScraper, RawListing
-from src.utils.chip_extract import mentions_apple_silicon
+from src.utils.chip_extract import detect_product, mentions_apple_silicon
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,6 @@ class PTTScraper(BaseScraper):
         for entry in feed.entries:
             title: str = entry.title
             url: str = entry.link
-            title_lower = title.lower()
             if any(tag in title for tag in _EXCLUDE_TITLES):
                 continue
             # Was a literal ["m1", "m2", "m3", "m4"], which silently dropped
@@ -142,7 +141,10 @@ class PTTScraper(BaseScraper):
             # this, twice; the list here was a third copy of the same mistake.
             if not mentions_apple_silicon(title):
                 continue
-            if "macbook" not in title_lower:
+            # Was `"macbook" not in title_lower`, which kept every desktop out.
+            # The board also carries iPads and displays; detect_product knows
+            # the difference between "Mac mini" and "iPad mini".
+            if detect_product(title) is None:
                 continue
             candidates.append((url, title))
 

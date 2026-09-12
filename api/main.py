@@ -7,13 +7,14 @@ from pydantic import BaseModel
 
 from src.calculator.score_engine import ScoringWeights, get_vfm_score
 from src.database.db_manager import DBManager
-from src.models.mac_spec import MacBookSpec
+from src.models.mac_spec import DEVICE_CLASSES, MacBookSpec
+from src.models.mac_spec import device_class as _class_of
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="mac-valuer API",
-    description="二手 MacBook 行情查詢與 VFM 評分引擎",
+    description="二手 Mac（MacBook、Mac mini、Mac Studio）在售物件查詢與 VFM 評分引擎",
     version="0.1.0",
 )
 
@@ -27,19 +28,33 @@ class ScoreResponse(BaseModel):
     vfm_score: float
 
 
+DEFAULT_THRESHOLDS = {"p50": 250.0, "p75": 350.0}
+
+
 def _compute_thresholds(weights: ScoringWeights) -> dict:
+    """p50 / p75 per device class, each cut from that class alone.
+
+    A desktop and a laptop are not judged against the same median: a box with
+    no screen is cheaper per benchmark point and its scores run higher, so one
+    pooled band would call every Mac mini a bargain and every MacBook dear.
+    """
     db = DBManager()
     all_deals = db.get_filtered_deals(status="available")
-    scores = [
-        s for d in all_deals
-        if (s := _attach_vfm(dict(d), weights).get("vfm_score")) and s > 0
-    ]
-    if not scores:
-        return {"p50": 250.0, "p75": 350.0}
-    return {
-        "p50": round(float(np.percentile(scores, 50)), 2),
-        "p75": round(float(np.percentile(scores, 75)), 2),
-    }
+    by_class: dict[str, list[float]] = {k: [] for k in DEVICE_CLASSES}
+    for d in all_deals:
+        s = _attach_vfm(dict(d), weights).get("vfm_score")
+        if s and s > 0:
+            by_class[_class_of(d.get("series"))].append(s)
+    out = {}
+    for klass, scores in by_class.items():
+        if not scores:
+            out[klass] = dict(DEFAULT_THRESHOLDS)
+        else:
+            out[klass] = {
+                "p50": round(float(np.percentile(scores, 50)), 2),
+                "p75": round(float(np.percentile(scores, 75)), 2),
+            }
+    return out
 
 
 def _attach_vfm(deal: dict, weights: ScoringWeights) -> dict:
@@ -55,6 +70,7 @@ def _attach_vfm(deal: dict, weights: ScoringWeights) -> dict:
             location=deal.get("location"),
         )
         deal["vfm_score"] = round(get_vfm_score(spec, weights), 2)
+        deal["device_class"] = _class_of(spec.series)
     except Exception as e:
         logger.warning("VFM score failed for %s: %s", deal.get("url", "?"), e)
         deal["vfm_score"] = None
@@ -70,7 +86,9 @@ def list_deals(
     chip: Optional[str] = Query(None, description="晶片型號（模糊比對），例如 M3"),
     source: Optional[str] = Query(None, description="來源平台，例如 ptt"),
     screen_size: Optional[int] = Query(None),
-    model_type: Optional[str] = Query(None),
+    model_type: Optional[str] = Query(None, description="Air / Pro / Neo / Mac mini / Mac Studio"),
+    device_class: Optional[str] = Query(
+        None, description="'laptop' 或 'desktop'；分數只在同一類內可比，vfm_thresholds 亦按類回傳"),
     ram_multiplier: float = Query(1.25),
     ssd_multiplier: float = Query(1.1),
     form_air13: float = Query(1.00),
@@ -78,8 +96,10 @@ def list_deals(
     form_pro13: float = Query(1.00),
     form_pro14: float = Query(1.18),
     form_pro16: float = Query(1.22),
+    form_mini: float = Query(1.00),
+    form_studio: float = Query(1.05),
 ):
-    """列出符合條件的二手 Mac 物件，每筆附帶 VFM 分數，預設只回傳 available 狀態。"""
+    """列出符合條件的二手 Mac 物件，每筆附帶 VFM 分數與 device_class，預設只回傳 available 狀態。"""
     db = DBManager()
     deals = db.get_filtered_deals(
         status=status,
@@ -90,6 +110,7 @@ def list_deals(
         source=source,
         screen_size=screen_size,
         model_type=model_type,
+        device_class_filter=device_class,
     )
     weights = ScoringWeights(
         ram_multiplier=ram_multiplier,
@@ -99,6 +120,8 @@ def list_deals(
         form_pro13=form_pro13,
         form_pro14=form_pro14,
         form_pro16=form_pro16,
+        form_mini=form_mini,
+        form_studio=form_studio,
     )
     deals = [_attach_vfm(d, weights) for d in deals]
     deals.sort(key=lambda d: d.get("vfm_score") or 0, reverse=True)

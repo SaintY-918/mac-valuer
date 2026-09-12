@@ -112,6 +112,46 @@ def force_extract_chip(title: str) -> str | None:
 INVALID_CHIPS = {"unknown", "none", "null", "n/a", ""}
 
 
+# Which Mac a title is selling. One pattern for all three scrapers: PTT,
+# Carousell and Shopee each kept their own "macbook" substring test, and the
+# first desktop would have needed the same edit in three places.
+#
+# A leading boundary only, spelled out rather than \b, because CJK counts as a
+# word character and "Macmini賣" would otherwise never match. No trailing
+# boundary: sellers write "MacbookPro" and "MacBookAir" as one word, and the
+# old substring test accepted those. "iPad mini" has no "mac" before "mini",
+# and "Studio Display" on its own is a monitor with no "mac" before "studio",
+# so neither matches.
+_PRODUCT_PATTERNS = (
+    ("macbook",    re.compile(r"(?<![A-Za-z0-9])mac\s*book", re.I)),
+    ("mac mini",   re.compile(r"(?<![A-Za-z0-9])mac\s*mini", re.I)),
+    ("mac studio", re.compile(r"(?<![A-Za-z0-9])mac\s*studio", re.I)),
+)
+
+PRODUCT_NAMES = tuple(name for name, _ in _PRODUCT_PATTERNS)
+
+# The series a desktop product name maps to. Laptops are not here: their
+# series (Air / Pro 13 / Pro 14/16 / Neo) needs the screen size as well, and
+# the parser already handles that.
+DESKTOP_PRODUCT_SERIES = {"mac mini": "Mac mini", "mac studio": "Mac Studio"}
+
+
+def detect_product(title: str) -> str | None:
+    """The Mac named in a title — "macbook", "mac mini", "mac studio" — or None.
+
+    A title naming several ("Mac Studio 含 Studio Display" names one; "MacBook
+    換 Mac mini" names two) yields whichever appears first in the text: that is
+    the thing being sold, the rest is context.
+    """
+    text = title or ""
+    best: tuple[int, str] | None = None
+    for name, pattern in _PRODUCT_PATTERNS:
+        m = pattern.search(text)
+        if m and (best is None or m.start() < best[0]):
+            best = (m.start(), name)
+    return best[1] if best else None
+
+
 def mentions_apple_silicon(title: str) -> bool:
     """Whether a title names a chip this project can score.
 

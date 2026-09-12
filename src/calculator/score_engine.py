@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from src.models.mac_spec import MacBookSpec
+from src.models.mac_spec import MacBookSpec, device_class
 from src.utils.benchmark_db import get_benchmark
 
 DEPRECIATION_RATE = 0.10
@@ -55,8 +55,32 @@ class ScoringWeights(BaseModel):
     form_pro14: float = 1.18
     form_pro16: float = 1.22
 
+    # Desktops. Same formula, same benchmark table: a chip, a year, RAM and
+    # storage mean the same thing in a box as in a laptop. The Studio's small
+    # premium is for what the chip does not capture — ports, thermals, the RAM
+    # ceiling. These multipliers are NOT tuned to make desktop scores line up
+    # with laptop scores; a screenless machine is cheaper per benchmark point
+    # and its numbers run higher. The two classes are compared against their
+    # own medians instead (see the dashboard and the alert threshold).
+    form_mini: float = 1.00
+    form_studio: float = 1.05
+
     def form_weight(self, key: str) -> float:
         return float(getattr(self, f"form_{key}", 1.0))
+
+
+# Which form keys belong to which class, so the dashboard can show one set of
+# sliders at a time. Derived from the field names, not retyped.
+LAPTOP_FORM_KEYS = ("air13", "air15", "pro13", "pro14", "pro16")
+DESKTOP_FORM_KEYS = ("mini", "studio")
+FORM_KEYS_BY_CLASS = {"laptop": LAPTOP_FORM_KEYS, "desktop": DESKTOP_FORM_KEYS}
+
+# What the slider is labelled. Laptops carry their size; desktops have none.
+FORM_LABELS = {
+    "air13": 'Air 13"', "air15": 'Air 15"',
+    "pro13": 'Pro 13"', "pro14": 'Pro 14"', "pro16": 'Pro 16"',
+    "mini": "Mac mini", "studio": "Mac Studio",
+}
 
 
 # One shared instance rather than a call in each signature. A default argument
@@ -67,12 +91,16 @@ DEFAULT_WEIGHTS = ScoringWeights()
 
 
 def form_factor_key(series: Any, screen_size: Any) -> str:
-    """Bucket a listing into one of the five form factors.
+    """Bucket a listing into one of the seven form factors.
 
-    Screen size decides within a family, so this needs both fields. Keep it the
-    only place that rule lives.
+    Screen size decides within a laptop family, so this needs both fields. Keep
+    it the only place that rule lives.
     """
     name = str(series or "").lower()
+    # Desktops first, before any size logic: a missing screen size defaults to
+    # 13.3" below, which would file every Mac mini under pro13.
+    if device_class(series) == "desktop":
+        return "mini" if "mini" in name else "studio"
     try:
         inches = float(screen_size) if screen_size else 13.3
     except (TypeError, ValueError):
@@ -98,6 +126,8 @@ def form_factor_key(series: Any, screen_size: Any) -> str:
 #
 # Keyed off form_factor_key rather than re-thresholding the raw number, so the
 # size on the card and the multiplier used to score it can never disagree.
+# Desktop keys are absent on purpose: nominal_inches() then returns None for
+# them, and the card prints no size.
 FORM_INCHES = {"air13": 13, "air15": 15, "pro13": 13, "pro14": 14, "pro16": 16}
 
 

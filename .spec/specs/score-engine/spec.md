@@ -16,7 +16,7 @@ VFM = 晶片基準分 × 年份折舊 × RAM加成 × SSD加成 × 形態加成 
 | 年份折舊 | 每滿一年 ×0.9 |
 | RAM 加成 | ≥16 GB 時套用（預設 ×1.25） |
 | SSD 加成 | ≥1 TB 時套用（預設 ×1.1） |
-| 形態加成 | Air 13"×1.00／Air 15"×1.08／Pro 13"×1.00／Pro 14"×1.18／Pro 16"×1.22 |
+| 形態加成 | Air 13"×1.00／Air 15"×1.08／Pro 13"×1.00／Pro 14"×1.18／Pro 16"×1.22／Mac mini×1.00／Mac Studio×1.05 |
 
 **公式只能有一份實作。** 所有 VFM 計算一律經由 `src/calculator/score_engine.py`：
 
@@ -31,6 +31,27 @@ Discord 警報門檻的兩側——網頁顯示「優秀」卻永不推播，或
 
 形態加成**必須同時看 `series` 與 `screen_size`**，判定邏輯集中於 `form_factor_key()`。
 權重集中於 `ScoringWeights`，Dashboard 的滑桿預設值由其推導，不得另行硬編碼。
+
+#### 6.X.1a 桌機：同一份公式，分開的級距
+
+Mac mini 與 Mac Studio 沿用同一份公式與同一張基準表——晶片、年份、RAM、SSD 對主機
+的意義與對筆電完全一樣。桌機沒有螢幕尺寸，`form_factor_key()` 先問 `device_class`，
+直接回 `mini`／`studio`，不落入缺尺寸的 13.3 吋預設。
+
+**但兩類的分數不可互比。** 主機沒有螢幕、沒有電池，每千元買到的效能天生較高：
+M4 Mac mini 16GB 以全新價 19,900 計算就約 740 分，超過筆電的警報門檻 500。
+這不是要用乘數修正的誤差，而是事實，所以：
+
+| 地方 | 規則 |
+|---|---|
+| Dashboard 色帶 p50／p75 | 從 `all_available` 內**同一類**的物件切；圖例寫「筆電基準」或「桌機基準」 |
+| 樣本不足 | 同類在售 < `MIN_BAND_SAMPLE`（10）筆時不分級：全部中性色，圖例說明原因，分數照樣顯示 |
+| API `vfm_thresholds` | 按類回傳 `{"laptop": {...}, "desktop": {...}}` |
+| Discord 警報 | `ALERT_VFM_THRESHOLD` 只管筆電；桌機讀 `ALERT_VFM_THRESHOLD_DESKTOP`，**未設定即不推播** |
+
+被否決的兩條路（decisions #38 的後續條目（待補））：用 `form_mini` 之類的乘數把桌機分數壓到筆電尺度——
+那是為了讓數字好看而捏造的係數，分數就不能被驗算；或桌機另寫一套公式——違反
+「公式只能有一份實作」，而且沒有任何因子在桌機上意義不同。
 
 #### 6.X.2 晶片抽取（`main.py: force_extract_chip`）
 
@@ -83,6 +104,8 @@ Apple 行銷四種尺寸，賣家寫出七種：實測資料庫中有 13.0 / 13.
   `src/utils/benchmark_db.py`。**同一來源是硬性要求**：混用跑分平台會讓分數之間
   不可比較，連帶讓 VFM 失去意義。
 - M5 系列已改為實測值（M5 17,933／M5 Pro 28,436／M5 Max 29,233），不再是外推。
+- `M3 Ultra`（27,749）只出現在 Mac Studio 2025，隨桌機支援一併加入；來源同樣標註於
+  `benchmark_db.py`，目前取自單筆上傳結果，平均頁面可讀時應更新。
 - 新增世代只需改 `src/utils/benchmark_db.py` 一處。`src/dashboard.py` 的 `_BENCH`
   直接指向同一個 dict，前端即時重算與後端評分不可能再漂移。
 - 查無晶片時 `get_benchmark()` 回傳 5000（極低分），物件仍會顯示但排在末端；

@@ -34,6 +34,8 @@ if _db_url:
 from src.calculator.score_engine import (
     DEPRECIATION_RATE,
     FAMILY_INCHES,
+    FORM_KEYS_BY_CLASS,
+    FORM_LABELS,
     RAM_BONUS_THRESHOLD_GB,
     SSD_BONUS_THRESHOLD_GB,
     ScoringWeights,
@@ -44,7 +46,13 @@ from src.calculator.score_engine import (
     vfm_from_mapping,
 )
 from src.database.db_manager import DBManager
-from src.models.mac_spec import VALID_RAM_GB, VALID_SSD_GB
+from src.models.mac_spec import (
+    DEVICE_CLASS_LABELS,
+    DEVICE_CLASSES,
+    VALID_RAM_GB,
+    VALID_SSD_GB,
+    device_class,
+)
 from src.parser.condition_flags import defects_for
 from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark
 
@@ -54,13 +62,26 @@ from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark
 _BENCH = CHIP_BENCHMARKS
 
 # Slider defaults are read off ScoringWeights rather than retyped, so the page
-# opens on exactly the weights the backend scores with.
+# opens on exactly the weights the backend scores with. The form keys come from
+# the same place the scorer reads them, so a new form factor gets a slider
+# without this file learning its name.
 _W = ScoringWeights()
+_ALL_FORM_KEYS = [k for keys in FORM_KEYS_BY_CLASS.values() for k in keys]
 DEFAULT_SLIDERS = {
     "ram_mult": _W.ram_multiplier, "ssd_mult": _W.ssd_multiplier,
-    "w_air13": _W.form_air13, "w_air15": _W.form_air15,
-    "w_pro13": _W.form_pro13, "w_pro14": _W.form_pro14, "w_pro16": _W.form_pro16,
+    **{f"w_{k}": _W.form_weight(k) for k in _ALL_FORM_KEYS},
 }
+
+# Which family values the 機型 filter offers in each mode. Laptop families are
+# grouped (a "Pro" is two series values); desktops are one series each.
+_MODEL_TYPES_BY_CLASS = {
+    "laptop": ["Air", "Pro", "Neo"],
+    "desktop": ["Mac mini", "Mac Studio"],
+}
+
+# Below this many available listings in a class, p50/p75 are ranks rather than
+# a standard (decisions #6) — so the page shows scores but does not band them.
+MIN_BAND_SAMPLE = 10
 
 
 def _nan_safe(val, default):
@@ -88,15 +109,18 @@ def _model_label(row: dict) -> str:
     and a label reading "MacBook · None" would be worse than a short one.
     """
     series = str(row.get("series") or "").lower()
-    family = "Air" if "air" in series else "Pro" if "pro" in series else ""
-
-    parts = [" ".join(p for p in ("MacBook", family) if p)]
-    # Apple's marketing size, not the measured diagonal. Sellers copy 13, 13.3
-    # and 13.6 for the same machine, and one listing claimed 15.6 — a size
-    # Apple has never made. nominal_inches derives it from the same function
-    # that picks the scoring multiplier, so the two cannot drift.
-    if (inches := nominal_inches(row.get("series"), row.get("screen_size"))):
-        parts[0] += f' {inches}"'
+    if device_class(row.get("series")) == "desktop":
+        # The series value is already the product name, and there is no size.
+        parts = [str(row.get("series"))]
+    else:
+        family = "Air" if "air" in series else "Pro" if "pro" in series else ""
+        parts = [" ".join(p for p in ("MacBook", family) if p)]
+        # Apple's marketing size, not the measured diagonal. Sellers copy 13,
+        # 13.3 and 13.6 for the same machine, and one listing claimed 15.6 — a
+        # size Apple has never made. nominal_inches derives it from the same
+        # function that picks the scoring multiplier, so the two cannot drift.
+        if (inches := nominal_inches(row.get("series"), row.get("screen_size"))):
+            parts[0] += f' {inches}"'
     if (chip := str(row.get("chip") or "").strip()) and chip.lower() != "none":
         parts.append(chip)
     return " · ".join(parts)
@@ -125,9 +149,14 @@ def _load_deals(**filters) -> list:
 
 
 @st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
-def _load_available() -> list:
-    """The unfiltered baseline the verdict bands are cut from."""
-    return _get_db().get_filtered_deals(status="available")
+def _load_available(klass: str) -> list:
+    """The unfiltered baseline the verdict bands are cut from — one class only.
+
+    A Mac mini and a MacBook are not judged against the same median: the box
+    has no screen and no battery, so it is cheaper per benchmark point and its
+    scores run higher. Pooling them would call every desktop a bargain.
+    """
+    return _get_db().get_filtered_deals(status="available", device_class_filter=klass)
 
 
 @st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
@@ -524,6 +553,12 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
     color: var(--accent) !important;
 }
 
+/* ── Mode switch ──────────────────────────────────────────────────────────
+   筆電｜桌機 sits under the title because it changes what the whole page
+   means — the bands, the median, the sliders — not which rows are shown. A
+   filter lives in the sidebar; a mode does not. */
+[data-testid="stSegmentedControl"] { margin: 2px 0 6px; }
+
 /* Keep the pagination row horizontal at every width. */
 [data-testid="stHorizontalBlock"] {
     flex-wrap: nowrap !important;
@@ -537,25 +572,54 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
 </style>
 """, unsafe_allow_html=True)
 
+if "min_price" not in st.session_state:
+    st.session_state.update({
+        "device_class": "laptop",
+        "model_type": None, "chip_input": "", "ram_gb": None,
+        "ssd_gb_filter": None, "screen_size": None,
+        "min_price": 0, "max_price": 0, "show_sold": False,
+        "hide_defects": False,
+        "source_filter": list(SOURCES),
+        **DEFAULT_SLIDERS,
+        "page_num": 1,
+    })
+
+# ── Header and mode switch ─────────────────────────────────────────────────────
+# Rendered before the sidebar because the sidebar's options depend on the
+# mode. The sources, derived rather than written out, so a fourth scraper
+# cannot be left off this line the way Carousell was left off the other two.
+st.markdown(f'<div class="st-eyebrow">二手 · {escape(" · ".join(SOURCE_LABELS[s] for s in SOURCES))} · 每日更新</div>',
+            unsafe_allow_html=True)
+st.title("Mac 好價雷達")
+
+
+def _on_mode_change():
+    """A family or size picked in one mode is not an option in the other, and
+    Streamlit raises on a stored value that is no longer offered."""
+    st.session_state.update({"model_type": None, "screen_size": None, "page_num": 1})
+
+
+mode = st.segmented_control(
+    "機種類別",
+    options=list(DEVICE_CLASSES),
+    format_func=lambda k: DEVICE_CLASS_LABELS[k],
+    key="device_class",
+    on_change=_on_mode_change,
+    label_visibility="collapsed",
+)
+# Deselecting the active segment leaves it None; the page always has a mode.
+if mode not in DEVICE_CLASSES:
+    mode = "laptop"
+_class_label = DEVICE_CLASS_LABELS[mode]
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## :material/search: 篩選條件")
 
-    if "min_price" not in st.session_state:
-        st.session_state.update({
-            "model_type": None, "chip_input": "", "ram_gb": None,
-            "ssd_gb_filter": None, "screen_size": None,
-            "min_price": 0, "max_price": 0, "show_sold": False,
-            "hide_defects": False,
-            "source_filter": list(SOURCES),
-            **DEFAULT_SLIDERS,
-            "page_num": 1,
-        })
-
     model_type = st.selectbox(
         "機型",
-        [None, "Air", "Pro", "Neo"],
-        format_func=lambda x: "不限" if x is None else f"MacBook {x}",
+        [None, *_MODEL_TYPES_BY_CLASS[mode]],
+        format_func=lambda x: "不限" if x is None else (x if mode == "desktop" else f"MacBook {x}"),
         key="model_type",
     )
     chip_input = st.text_input("晶片型號（模糊）", placeholder="例如：M3", key="chip_input")
@@ -576,19 +640,22 @@ with st.sidebar:
     )
     # Offered sizes follow the chosen family: there is no 15" Pro and no 14"
     # Air, and letting someone pick one returned an empty list that reads as
-    # "no stock" rather than "that machine does not exist".
-    _sizes = FAMILY_INCHES.get(model_type) if model_type else sorted(
-        {i for group in FAMILY_INCHES.values() for i in group})
-    # Switching family can strip the size already chosen; drop it rather than
-    # letting Streamlit fail on a value that is no longer an option.
-    if st.session_state.get("screen_size") not in (None, *_sizes):
-        st.session_state["screen_size"] = None
-    screen_size_filter = st.selectbox(
-        "螢幕尺寸",
-        [None, *_sizes],
-        format_func=lambda x: "不限" if x is None else f"{x} 吋",
-        key="screen_size",
-    )
+    # "no stock" rather than "that machine does not exist". Desktops have no
+    # screen, so the control is not drawn at all in that mode.
+    screen_size_filter = None
+    if mode == "laptop":
+        _sizes = FAMILY_INCHES.get(model_type) if model_type else sorted(
+            {i for group in FAMILY_INCHES.values() for i in group})
+        # Switching family can strip the size already chosen; drop it rather
+        # than letting Streamlit fail on a value that is no longer an option.
+        if st.session_state.get("screen_size") not in (None, *_sizes):
+            st.session_state["screen_size"] = None
+        screen_size_filter = st.selectbox(
+            "螢幕尺寸",
+            [None, *_sizes],
+            format_func=lambda x: "不限" if x is None else f"{x} 吋",
+            key="screen_size",
+        )
     min_price = st.number_input("最低價格 (TWD)", min_value=0, step=1000, key="min_price")
     max_price = st.number_input("最高價格 (TWD)", min_value=0, step=1000, key="max_price")
     source_filter = st.multiselect(
@@ -612,17 +679,18 @@ with st.sidebar:
         st.caption("調整各項規格加權，分數即時重算")
         ram_mult = st.slider("RAM 加權（≥ 16 GB）", min_value=1.0, max_value=2.0, step=0.05, key="ram_mult")
         ssd_mult = st.slider("SSD 加權（≥ 1 TB）", min_value=1.0, max_value=2.0, step=0.05, key="ssd_mult")
-        st.caption(":material/laptop: 機型 × 螢幕組合加權")
-        w_air13 = st.slider('Air 13"',  min_value=0.5, max_value=2.0, step=0.05, key="w_air13")
-        w_air15 = st.slider('Air 15"',  min_value=0.5, max_value=2.0, step=0.05, key="w_air15")
-        w_pro13 = st.slider('Pro 13"',  min_value=0.5, max_value=2.0, step=0.05, key="w_pro13")
-        w_pro14 = st.slider('Pro 14"',  min_value=0.5, max_value=2.0, step=0.05, key="w_pro14")
-        w_pro16 = st.slider('Pro 16"',  min_value=0.5, max_value=2.0, step=0.05, key="w_pro16")
+        # Only this mode's form factors. The other set keeps whatever the
+        # session holds, so switching back does not lose an adjustment.
+        st.caption(":material/laptop: 機型 × 螢幕組合加權" if mode == "laptop"
+                   else ":material/desktop_windows: 機型加權")
+        for _key in FORM_KEYS_BY_CLASS[mode]:
+            st.slider(FORM_LABELS[_key], min_value=0.5, max_value=2.0, step=0.05, key=f"w_{_key}")
         st.button(":material/restart_alt: 重置評分設定", on_click=_reset_vfm_weights, use_container_width=True)
 
     st.divider()
 
     def _reset_all():
+        # The mode is not a filter, so it survives a reset.
         st.session_state.update({
             "model_type": None, "chip_input": "", "ram_gb": None,
             "ssd_gb_filter": None, "screen_size": None,
@@ -656,8 +724,7 @@ with st.sidebar:
 # backend cannot drift apart again.
 weights = ScoringWeights(
     ram_multiplier=ram_mult, ssd_multiplier=ssd_mult,
-    form_air13=w_air13, form_air15=w_air15,
-    form_pro13=w_pro13, form_pro14=w_pro14, form_pro16=w_pro16,
+    **{f"form_{k}": float(st.session_state[f"w_{k}"]) for k in _ALL_FORM_KEYS},
 )
 
 _selected_sources: list = source_filter or []
@@ -677,6 +744,7 @@ try:
         max_price=float(max_price) if max_price > 0 else None,
         model_type=model_type,
         source=_source_param,
+        device_class_filter=mode,
     )
     # Subset of sources that SQL could not express
     if 1 < len(_selected_sources) < len(SOURCES):
@@ -689,10 +757,9 @@ try:
     if ssd_gb_filter:
         deals = [d for d in deals if int(_nan_safe(d.get("ssd_gb"), 0)) == ssd_gb_filter]
 
-    # All available deals (unfiltered) for p75/p50 baseline
-    all_available = _load_available()
+    # All available deals of this class (unfiltered) for the p75/p50 baseline
+    all_available = _load_available(mode)
 except Exception as exc:
-    st.title("Mac 好價雷達")
     st.error(
         f"資料庫連線失敗：{exc}\n\n"
         "請確認 `DATABASE_URL` 環境變數已正確設定（本地開發於 `.env`；"
@@ -704,10 +771,12 @@ except Exception as exc:
 _all_scores = [vfm_from_mapping(d, weights) for d in all_available if _nan_safe(d.get("price"), 0) > 0]
 p75 = float(np.percentile(_all_scores, 75)) if _all_scores else 350.0
 p50 = float(np.percentile(_all_scores, 50)) if _all_scores else 250.0
+# With a handful of listings the percentiles are a ranking, not a standard
+# (decisions #6). Scores still show; the colour bands do not.
+banded = len(_all_scores) >= MIN_BAND_SAMPLE
 
 if not deals:
-    st.title("Mac 好價雷達")
-    st.warning("找不到符合條件的物件。請調整篩選條件後重試。")
+    st.warning(f"目前沒有符合條件的{_class_label}物件。請調整篩選條件，或切換機種類別。")
     st.stop()
 
 df = pd.DataFrame(deals)
@@ -717,20 +786,14 @@ df["source"] = df["source"].fillna("")
 
 # Client-side source filter (both/none selected)
 if len(_selected_sources) == 0:
-    st.title("Mac 好價雷達")
-    st.warning("請至少選擇一個賣場來源（PTT 或 蝦皮）。")
+    st.warning("請至少選擇一個賣場來源。")
     st.stop()
 
 # ── Recalculate VFM with user weights ─────────────────────────────────────────
 df["vfm_score"] = df.apply(lambda r: vfm_from_mapping(r.to_dict(), weights), axis=1)
 df = df.sort_values("vfm_score", ascending=False).reset_index(drop=True)
 
-# ── Header ─────────────────────────────────────────────────────────────────────
-# The sources, derived rather than written out, so a fourth scraper cannot be
-# left off this line the way Carousell was left off the other two.
-st.markdown(f'<div class="st-eyebrow">二手 · {escape(" · ".join(SOURCE_LABELS[s] for s in SOURCES))} · 每日更新</div>',
-            unsafe_allow_html=True)
-st.title("Mac 好價雷達")
+# ── Stats ──────────────────────────────────────────────────────────────────────
 prices = df["price"].dropna().astype(float)
 try:
     _new_count = _load_new_count()
@@ -749,15 +812,24 @@ st.markdown(f"""
 
 # ── 分數色帶圖例 ─────────────────────────────────────────────────────────────
 # Squares in the verdict colours, not emoji. The cut points come from every
-# available listing rather than from the filtered view, so narrowing to four
-# machines does not move the standard they are judged against. Stated on the
+# available listing of this class rather than from the filtered view, so
+# narrowing to four machines does not move the standard they are judged
+# against — and a desktop is never measured against laptops. Stated on the
 # page because a band with an unexplained basis is a band nobody trusts.
-st.markdown(f"""
+if banded:
+    st.markdown(f"""
 <div class="vfm-legend">
-  <span style="color:var(--ink-soft);font-weight:500;">全站基準</span>
+  <span style="color:var(--ink-soft);font-weight:500;">{_class_label}基準</span>
   <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--good);"></b><i>划算</i> ≥ {p75:.0f}</span>
   <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--mid);"></b><i>普通</i> ≥ {p50:.0f}</span>
   <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--low);"></b><i>偏貴</i> &lt; {p50:.0f}</span>
+</div>
+""", unsafe_allow_html=True)
+else:
+    st.markdown(f"""
+<div class="vfm-legend">
+  <span style="color:var(--ink-soft);font-weight:500;">{_class_label}基準</span>
+  <span>在售僅 {len(_all_scores)} 筆（少於 {MIN_BAND_SAMPLE}），樣本不足，暫不分級——分數仍可在同類之間比較</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -875,6 +947,8 @@ def _tier(score: float) -> tuple[str, str]:
 
     The glow is the same hue at 33% alpha, matching ScorePill's `${tone}55`.
     """
+    if not banded:
+        return "var(--ink-soft)", "#5B6470"
     if score >= p75:
         return "var(--good)", "#2E7D5B"
     if score >= p50:
@@ -965,11 +1039,13 @@ deals = [
 _caption = (
     '<div class="deal-caption">'
     '<span>CP 值 — 效能分 / 每千元</span>'
-    # "全站", not just "中位數": these come from every available listing, not
-    # from the rows currently shown. Filtering to four items must not move the
-    # standard a listing is judged against — that was the objection to
-    # percentile ranking in decisions.md #6, and the label has to say so.
-    f'<span>全站中位數 {p50:.0f}</span>'
+    # "筆電" / "桌機", not just "中位數": these come from every available
+    # listing of the class, not from the rows currently shown. Filtering to
+    # four items must not move the standard a listing is judged against — that
+    # was the objection to percentile ranking in decisions.md #6, and the
+    # label has to say so.
+    + (f'<span>{_class_label}中位數 {p50:.0f}</span>' if banded
+       else f'<span>{_class_label}樣本不足，未分級</span>') +
     '</div>'
 )
 st.markdown(f'<div class="deal-list">{_caption}{"".join(deals)}</div>',

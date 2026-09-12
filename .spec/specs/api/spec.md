@@ -18,7 +18,7 @@
 
 | Method | Path | 說明 |
 |---|---|---|
-| GET | `/api/deals` | 條件查詢物件清單，附帶即時計算的 VFM 分數 |
+| GET | `/api/deals` | 條件查詢物件清單，附帶即時計算的 VFM 分數與 `device_class`；`device_class=laptop|desktop` 可限縮；`vfm_thresholds` 按類回傳 `{"laptop": {p50, p75}, "desktop": {...}}` |
 | POST | `/api/score/calculate` | 單筆規格試算 VFM |
 | GET | `/api/health` | 健康檢查 |
 
@@ -30,6 +30,13 @@
 
 #### 4.X.4 Dashboard 呈現規範
 
+- **「筆電｜桌機」是模式，不是篩選。** 放在標題下方、統計列上方的分段切換，預設筆電。
+  切換後側邊欄的機型選項、螢幕尺寸（桌機不顯示）、VFM 滑桿（只顯示該類的形態加成）、
+  色帶基準與中位數全部跟著換；「重置」不重置模式。理由：兩類的分數不可互比
+  （`score-engine/spec.md` 6.X.1a），混排等於永遠把桌機放榜首。
+- **色帶基準寫明類別**：圖例與清單標題寫「筆電基準」／「桌機中位數」，不寫「全站」。
+  同類在售少於 `MIN_BAND_SAMPLE` 筆時不分級，圖例說明原因，分數照常顯示。
+- 桌機卡片的機型行直接用 `series`（`Mac mini · M4 Pro`），沒有尺寸、沒有電池 chip。
 - **物件清單以卡片格線呈現，不使用 `st.dataframe`。** 13 欄的表格在 700px 以下不可讀，且 `st.dataframe` 幾乎不開放樣式控制。
 - **欄數採明確斷點，不使用 `auto-fill` + `minmax`**：側邊欄佔用的寬度會隨視窗變動，曾使「桌機 3 欄且平板 2 欄」只在 236–238px 這個 2px 的 `minmax` 窗口內成立，Streamlit 內距一改就會靜默翻掉版面。
 

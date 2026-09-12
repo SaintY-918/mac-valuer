@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 import requests
 
 from src.scrapers.base import BaseScraper, RawListing
+from src.utils.chip_extract import detect_product
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,6 @@ USER_AGENT = (
 )
 HTTP_TIMEOUT = 25
 
-_MODEL_RE = re.compile(r"macbook|mac\s*book", re.I)
 # Accessories whose titles also say "MacBook". Shared intent with the Shopee
 # exclusion list; kept separate because Carousell's wording differs.
 _EXCLUDE_TITLES = [
@@ -52,6 +52,9 @@ _EXCLUDE_TITLES = [
     "包", "袋", "貼紙", "鍵盤膜", "擴充座", "底座", "電源線", "維修", "收購",
     # Windows laptops sold as "MacBook-like" put the word in their slug.
     "類macbook", "類 macbook", "仿macbook",
+    # A monitor, not a Mac Studio. detect_product would not match it on its
+    # own, but a slug can carry both words in either order.
+    "studio display", "studio-display",
 ]
 _SOLD_KEYWORDS = ["已售出", "售出", "已賣出", "sold", "已完售"]
 
@@ -105,9 +108,11 @@ class CarousellScraper(BaseScraper):
             # Slugs are percent-encoded; decode before matching so Chinese
             # titles containing the model name are not missed.
             slug = urllib.parse.unquote(loc)
-            if not _MODEL_RE.search(slug):
+            # Slugs join words with hyphens ("mac-mini-m4"); the product
+            # patterns expect a space or nothing between them.
+            if detect_product(slug.replace("-", " ")) is None:
                 continue
-            if any(w in slug for w in _EXCLUDE_TITLES):
+            if any(w in slug.lower() for w in _EXCLUDE_TITLES):
                 continue
             macbooks.append((_parse_lastmod(lastmod), loc))
 
@@ -144,14 +149,14 @@ class CarousellScraper(BaseScraper):
             return None
 
         title = (product.get("name") or "").strip()
-        if not title or any(w in title for w in _EXCLUDE_TITLES):
+        if not title or any(w in title.lower() for w in _EXCLUDE_TITLES):
             return None
         # The slug is not enough. A Honor laptop advertised as "鋁合金類macbook"
         # matches on the URL, and one seller's title was literally "888" with a
         # 99999 placeholder price. Requiring the model name in the title itself
         # rejects both.
-        if not _MODEL_RE.search(title):
-            logger.debug("Title is not a MacBook, skipping: %s", title[:40])
+        if detect_product(title) is None:
+            logger.debug("Title is not a Mac, skipping: %s", title[:40])
             return None
 
         offers = product.get("offers") or {}
