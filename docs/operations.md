@@ -120,20 +120,42 @@ SHOPEE_KEYWORDS=二手 MacBook,二手 Mac mini,二手 Mac Studio
 桌機上線後跑一次 `python -m src.scripts.revalidate_series`：蝦皮的 MacBook 搜尋以前
 就會夾帶少數 Mac mini，它們被存成了 `Pro 13`。
 
-### session 過期
+### 蝦皮要人工滑一次驗證，大約每一到兩天
 
-蝦皮會週期性要求重新驗證。headless 排程遇到驗證碼必定失敗，需手動處理一次：
+**平常不用做任何事。** `mac-valuer-shopee-verify` 這個工作排程在你登入後 3 分鐘
+跑一次：先用無頭確認驗證還有效，有效就靜靜結束；失效才跳出視窗要你滑拼圖。
+人在電腦前的時間才解驗證，凌晨 02:30 的抓取就能無頭跑完。
+
+要手動跑或確認狀態：
+
+```powershell
+.\venv\Scripts\python.exe -m src.scripts.refresh_shopee_session
+```
+
+不碰資料庫、不呼叫 LLM，約 30 秒。加 `--force` 可以略過無頭探測直接開視窗。
+兩個排程都由 `install_schedule.ps1` 定義，加 `-NoVerifyTask` 可以不裝登入這個。
+
+想順便把當天資料補回來，就跑完整流程（較久，會呼叫 LLM 並推播）：
 
 ```powershell
 $env:SHOPEE_HEADLESS="false"
 .\venv\Scripts\python.exe -m src.main --source shopee
 ```
 
-完成滑動驗證後回終端機按 Enter。
+`SHOPEE_INTERACTIVE` 預設 `true`，它會停下來等你；排程設成 `false`，撞牆時直接
+失敗通報，不會卡在「按 Enter」等到排程逾時。
 
-實測 session 壽命約 1-2 週（2026-09-11 觀察到 12.8 天後失效）。與其等 Discord
-回報失敗才處理，建議每 2 週主動重登一次；`scripts/run_local_scrape.ps1` 的排程
-日誌開頭會印出「Session file is N.X days old」，可以順手看一眼。
+**不必去調 headless、指紋或請求數，那些都不是原因。** 2026-09-13 實測：人滑完
+驗證之後幾分鐘，無頭模式照樣讀完全部 9 個搜尋頁、每頁 60 筆
+（[decisions #42](decisions.md#42-蝦皮要的是最近有人通過驗證不是-session也不是瀏覽器模式)）。
+蝦皮要的是「最近有人通過驗證」，驗證的有效期大約一到兩天。
+
+因此**蝦皮排程失敗是預期行為，不是故障**。想要連續幾天都有蝦皮資料，就得有人
+每一兩天滑一次；真正的解法是等聯盟行銷 API 開通。
+
+「session 壽命約 1-2 週」是本文件先前的錯誤記載，已更正——當初的依據是兩天
+沒看到蝦皮錯誤，但那兩天其實連資料庫都沒連上，根本沒跑到爬蟲。排程日誌開頭的
+「Session file is N.X days old」只代表上次成功存檔距今多久，**不是有效期限**。
 
 ### 重驗 CI 可行性
 
@@ -209,7 +231,7 @@ git ls-files | xargs grep -lniE '<你的email>|<內網IP前綴>|<你的使用者
 |---|---|
 | `ModuleNotFoundError: No module named 'pandas'` | 用了系統 Python，要用 `.\venv\Scripts\python.exe` |
 | `ModuleNotFoundError: No module named 'src'` | 不在專案根目錄，或直接跑了 `src/dashboard.py` |
-| Discord 顯示 ⛔ 某來源失敗 | 訊息裡有失敗原因；蝦皮多半是 session 過期 |
+| Discord 顯示 ⛔ 某來源失敗 | 訊息裡有失敗原因；蝦皮看網址：`scene=crawler_item` 是被判成爬蟲（先確認沒用 headless），`is_logged_in=false` 是 session 已作廢，重登一次 |
 | 排程 `LastTaskResult` 非 0 | 看 `logs/scrape_YYYY-MM-DD.log` |
 | Neon 連線 timeout | 網路可能擋 5432 埠，換行動網路測試。`DBManager` 已設定 `connect_timeout=10`，失敗會在 10 秒內浮現，不會卡住整條 pipeline |
 | Dashboard 顯示舊版 | Streamlit Cloud 快取，用無痕視窗開 |

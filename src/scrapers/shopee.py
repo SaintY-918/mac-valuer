@@ -22,7 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 class ShopeeSessionExpired(RuntimeError):
-    """Headless run hit the login / anti-bot wall with no usable session.
+    """Unattended run hit the anti-bot wall and no human can clear it.
+
+    The name says "expired" for compatibility; what actually ran out is
+    Shopee's captcha clearance, not the login (decisions #42). A headless
+    client is fine -- measured -- but only a human can drag the slider.
 
     Raised rather than returning [] so the pipeline reports a hard failure —
     a silent empty list is indistinguishable from 'no new listings today'.
@@ -61,6 +65,12 @@ class ShopeeScraper(BaseScraper):
         self._sem = asyncio.Semaphore(self._concurrency)
         self._state_path = Path(os.getenv("SHOPEE_STATE_PATH", "shopee_state.json"))
         self._headless = os.getenv("SHOPEE_HEADLESS", "false").lower() == "true"
+        # Whether anyone is at the keyboard -- not the same question as headless.
+        # The scheduled task can open a visible window and still have nobody to
+        # solve a captcha, and then a login wall must fail loudly instead of
+        # sitting on input() until the task's time limit kills it. Silence has
+        # no shape (2026-09-13; see decisions #42).
+        self._interactive = os.getenv("SHOPEE_INTERACTIVE", "true").lower() == "true"
         # Visiting a detail page per candidate meant ~33 navigations per run in
         # one session — the pattern that gets a client classified as a crawler.
         # The search response already carries name and price (the L1 filter runs
@@ -157,12 +167,16 @@ class ShopeeScraper(BaseScraper):
                 items_p1 = await self._search_items(page, first_kw, newest=0)
 
                 if "login" in page.url or not items_p1:
-                    if self._headless:
+                    if self._headless or not self._interactive:
+                        mode = ("SHOPEE_HEADLESS=true" if self._headless
+                                else "SHOPEE_INTERACTIVE=false")
                         raise ShopeeSessionExpired(
-                            f"Shopee login / anti-bot wall hit at {page.url} with SHOPEE_HEADLESS=true. "
-                            f"Session at {self._state_path} is missing or expired — "
-                            "re-run once with SHOPEE_HEADLESS=false to log in, "
-                            "or configure SHOPEE_APP_ID / SHOPEE_APP_SECRET to use the affiliate API."
+                            f"Shopee anti-bot wall hit at {page.url} with {mode}. "
+                            "Shopee wants a human to pass the slide captcha; no setting "
+                            "gets past it. Re-run once with SHOPEE_HEADLESS=false and "
+                            "SHOPEE_INTERACTIVE=true, solve the puzzle, and the cleared "
+                            f"session is written back to {self._state_path}. "
+                            "Or configure SHOPEE_APP_ID / SHOPEE_APP_SECRET to use the affiliate API."
                         )
 
                     print("\n=======================================================")

@@ -15,6 +15,18 @@
 - **個資檢查明確涵蓋爬蟲抓到的第三方資料**。賣家的電話不會因為是抓來的就可以公開。
 
 ### 新增
+- **`src/scripts/refresh_shopee_session.py` 與 `mac-valuer-shopee-verify` 登入排程**。
+  蝦皮每一兩天要人滑一次拼圖驗證，而排程在凌晨 02:30 跑，那時沒有人。這組改動把
+  人工步驟移到人確實在場的時刻：登入後 3 分鐘先用**無頭**確認驗證是否還有效，
+  有效就靜靜結束，失效才跳出視窗。早上解掉，當晚的抓取就能無頭跑完。
+  腳本本身約 30 秒，不碰資料庫也不呼叫 LLM——原本要重新清除驗證只能跑完整流程，
+  代價是數分鐘與一輪 LLM 呼叫。**先無頭探測再決定要不要開視窗**是關鍵：每次登入
+  都硬跳視窗的東西，一週內就會被關掉，然後排程又回到半夜無聲失敗。
+  `install_schedule.ps1` 一併註冊兩個排程，`-NoVerifyTask` 可略過登入那個。
+- **`SHOPEE_INTERACTIVE`**（預設 `true`）。撞到蝦皮登入牆時是否等人解驗證。排程
+  設 `false`，直接拋 `ShopeeSessionExpired` 通報 Discord，不再卡在 `input()` 等到
+  一小時逾時被殺——那樣 Discord 什麼都不會說。原本這件事是由 `SHOPEE_HEADLESS`
+  兼任的，但有視窗的排程一樣無人值守，兩者不是同一個問題。
 - **`docs/decisions.md` 加上依主題分組的目錄**（32 則分為爬蟲、解析、資料庫語意、
   評分呈現、工程紀律、維運通報、公開隱私七組）。912 行平鋪的文件，找不到想看的那則
   等於沒寫。
@@ -31,6 +43,13 @@
   的內容；`scripts/check_docs.py` 早已將其列入 `DOC_EXCLUDE`。本機檔案保留。
 
 ### 修正
+- **查明蝦皮排程長期失敗的原因：它要的是最近有人通過滑動驗證**，與 headless、
+  指紋、請求數、session 年齡都無關。實測人解完驗證數分鐘後，無頭模式讀完全部
+  9 個搜尋頁、每頁 60 筆。驗證有效期約一到兩天，因此這條路徑無法完全無人值守，
+  排程失敗屬於預期行為。`ShopeeSessionExpired` 的訊息改為指明「需要人通過滑動驗證」，
+  不再說「session 過期」——後者會把人導去重新登入，但登入不是問題所在。
+  文件中「session 壽命約 1-2 週」的錯誤記載一併更正
+  （見 [decisions #42](docs/decisions.md#42-蝦皮要的是最近有人通過驗證不是-session也不是瀏覽器模式)）。
 - **CI 的 pytest job 一直在 collection 階段就失敗**，四個依賴不在手打的安裝清單裡
   （`feedparser`、`playwright`、`tabulate`、`google-genai`）。清單改為
   `pip install pytest ruff -r requirements.txt`，不再需要有人記得同步。

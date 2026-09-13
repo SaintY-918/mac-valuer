@@ -110,14 +110,14 @@ push `.github/workflows/scraper.yml` 後自動啟用。
 蝦皮與旋轉拍賣都擋資料中心 IP，GitHub runner 連不上（實測，見
 [`docs/decisions.md`](decisions.md)），所以這兩個來源跑在自己的機器上。
 
-先手動登入建立蝦皮 session：
+先手動建立蝦皮 session：
 
 ```powershell
-$env:SHOPEE_HEADLESS="false"
-.\venv\Scripts\python.exe -m src.main --source shopee
+.\venv\Scripts\python.exe -m src.scripts.refresh_shopee_session
 ```
 
-會開啟瀏覽器視窗，完成登入或驗證後回終端機按 Enter。接著註冊排程：
+會開啟瀏覽器視窗，滑掉拼圖驗證後它自動存檔關閉。**蝦皮約每一到兩天會再要求一次**，
+屆時重跑這一行即可，見 [`docs/operations.md`](operations.md)。接著註冊排程：
 
 ```powershell
 .\scripts\install_schedule.ps1
@@ -154,7 +154,7 @@ repo 裡有的東西 `git clone` 就會回來。**不在 repo 裡的有四樣**�
 |---|---|---|
 | `venv` | `python -m venv venv`＋`venv\Scripts\pip install -r requirements.txt` | 平台相依，且體積大 |
 | `.env` | 複製 `.env.example` 後填值 | 含金鑰與資料庫連線字串 |
-| `shopee_state.json` | `SHOPEE_HEADLESS=false` 跑一次蝦皮並登入 | 是登入憑證，且會過期 |
+| `shopee_state.json` | `python -m src.scripts.refresh_shopee_session` | 是登入憑證，且驗證約一兩天就要重解 |
 | Windows 工作排程 | `.\scripts\install_schedule.ps1` | 是作業系統的狀態，不是檔案 |
 
 完整順序：
@@ -167,8 +167,7 @@ python -m venv venv
 
 copy .env.example .env          # 然後填入 DATABASE_URL / GEMINI_API_KEY / DISCORD_WEBHOOK_URL
 
-$env:SHOPEE_HEADLESS="false"    # 開瀏覽器登入蝦皮一次
-.\venv\Scripts\python.exe -m src.main --source shopee
+.\venv\Scripts\python.exe -m src.scripts.refresh_shopee_session   # 滑一次蝦皮驗證
 
 .\scripts\install_schedule.ps1  # 註冊每日排程
 Start-ScheduledTask -TaskName "mac-valuer-scrape"   # 立刻驗證一次

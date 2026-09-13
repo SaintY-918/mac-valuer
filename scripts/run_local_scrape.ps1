@@ -36,7 +36,7 @@ function Write-Log($msg) {
 
 Write-Log "=== run_local_scrape start (sources: $Sources) ==="
 
-# The session must already exist. Without it a headless run raises
+# The session must already exist. Without it an unattended run raises
 # ShopeeSessionExpired, which now reaches Discord as an explicit failure.
 $StatePath = Join-Path $RepoRoot "shopee_state.json"
 if (($Sources -match "shopee") -and -not (Test-Path $StatePath)) {
@@ -52,8 +52,16 @@ if (Test-Path $StatePath) {
 $Python = Join-Path $RepoRoot "venv\Scripts\python.exe"
 if (-not (Test-Path $Python)) { $Python = "python" }
 
-# Headless so the scheduled task never blocks on a visible browser window.
+# Headless, and that is measured to be harmless: on 2026-09-13, minutes after a
+# human cleared the slide captcha, a headless client read all nine search pages
+# at 60 items each. What Shopee periodically demands is a human, not a window --
+# see decisions #42. A visible window buys nothing when nobody is watching it.
 $env:SHOPEE_HEADLESS = "true"
+# Nobody is at the keyboard. A login wall must raise ShopeeSessionExpired
+# instead of waiting on input() until the one-hour limit kills the task. This
+# is independent of headless: a headed run started by the scheduler is just as
+# unattended, so the two must be separate switches.
+$env:SHOPEE_INTERACTIVE = "false"
 # Python's logging writes to stderr; without this the Chinese log lines are
 # written in the ANSI codepage and come back as mojibake.
 $env:PYTHONIOENCODING = "utf-8"

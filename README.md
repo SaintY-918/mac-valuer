@@ -66,7 +66,7 @@ shopee.tw/verify/captcha?...&scene=crawler_item
 
 ### 與其硬碰反爬，不如找願意讓你抓的平台
 
-蝦皮需要住宅 IP、登入 session，且會週期性跳驗證碼，無法完全無人值守。
+蝦皮需要住宅 IP 與登入 session，且會週期性跳驗證碼，無法完全無人值守。
 旋轉拍賣的 `robots.txt` 明確寫出哪些能爬：
 
 ```
@@ -177,7 +177,9 @@ pytest tests/e2e                      # 瀏覽器實測，約 20 秒
 
 ## 已知問題
 
-- **蝦皮無法完全自動化**：需住宅 IP，且會週期性要求手動通過驗證碼。
+- **蝦皮無法完全自動化**：需住宅 IP，且**約每一到兩天要有人手動通過一次滑動驗證**
+  （`python -m src.scripts.refresh_shopee_session`，約 30 秒）。實測與 headless、
+  指紋、請求數無關——人解完驗證後，無頭模式照樣讀完全部搜尋頁。
 - **行情價顯示尚未實作**：模型對不同世代非中性，需各世代累積 30 筆以上才有統計意義。
   → [`docs/decisions.md` #5](docs/decisions.md)
 

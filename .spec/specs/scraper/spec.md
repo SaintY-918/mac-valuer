@@ -76,10 +76,16 @@
     ```
 
     `scene=crawler_item` 是蝦皮反爬系統對請求的分類標記。session 有效卻仍被攔，
-    表示攔截依據是**執行環境（IP 段）**而非憑證。瀏覽器路徑必須在住宅或行動網路
+    表示攔截依據是**執行環境**而非憑證。瀏覽器路徑必須在住宅或行動網路
     下執行（`scripts/run_local_scrape.ps1`）。
-
     需要重新驗證時（例如蝦皮政策改變）可手動觸發該 workflow，它不寫入資料庫。
+  - **住宅 IP 是必要條件，不是充分條件。** 蝦皮會週期性要求人工通過滑動驗證，
+    通過後的有效期約一到兩天。2026-09-13 實測：人解完驗證數分鐘後，**無頭**模式
+    讀完全部 9 個搜尋頁、每頁 60 筆——headless 與請求數都不是攔截依據（decisions #42）。
+  - **`SHOPEE_HEADLESS` 與「是否有人值守」是兩件事。** 排程開的視窗一樣沒人看著，
+    所以無人值守由 `SHOPEE_INTERACTIVE=false` 表達，不由 headless 代表。
+  - **瀏覽器路徑無法完全無人值守**，這是平台決定的，不是實作缺陷。排程失敗屬於
+    預期行為，處理方式是有人手動跑一次解驗證。
 - **搜尋策略**：
   - 關鍵字：`二手 MacBook` (不依賴 facet id)；可經 `SHOPEE_KEYWORDS` 以逗號擴充，
     **瀏覽器路徑與 API 路徑讀同一個變數**。要收桌機就加 `二手 Mac mini,二手 Mac Studio`，
@@ -89,7 +95,10 @@
   - 存取控制：0 登入、隨機 User-Agent、隨機 Delay。
 - **失敗語意（Failure Semantics）**：
   - 爬取失敗**必須拋出例外**，不得回傳空 list。空 list 代表「本次無符合物件」，與「爬蟲壞掉」是不同事件，混淆會使 heartbeat 無法反映故障。
-  - 瀏覽器路徑在 headless 下撞到登入牆時，拋出 `ShopeeSessionExpired`。
+  - 瀏覽器路徑在無人值守（`SHOPEE_HEADLESS=true` 或 `SHOPEE_INTERACTIVE=false`）撞到
+    驗證牆時，拋出 `ShopeeSessionExpired`；只有互動模式才停下來等人解驗證。
+    訊息必須指出「需要人通過滑動驗證」，不可說成「session 過期」——後者會把人
+    導去重新登入，但登入不是問題所在。
   - Pipeline 收到例外時，該來源必須被記入 `source_errors`，並**跳過該來源的 sweep**（否則會把整批既有物件誤標為 `unavailable`）。
 - **下架判定（Retirement）**：
   - 本專案所有爬蟲取得的都是**取樣視窗**，不是完整庫存：PTT 讀 Atom feed 的近期文章，蝦皮讀最新約 180 筆搜尋結果。
