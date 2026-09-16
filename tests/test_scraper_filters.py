@@ -145,6 +145,14 @@ def test_rejects_a_windows_laptop_calling_itself_macbook_like(carousell, monkeyp
     assert _listing(carousell, product, monkeypatch) is None
 
 
+def test_rejects_an_intel_era_listing(carousell, monkeypatch):
+    """The third scraper to get this check. PTT and Shopee both ask it; the
+    machine is out of scope whichever site it is listed on, and a row that gets
+    in still costs an LLM call before the parser throws it away."""
+    product = _product(name="MacBook Pro 15 2015 i7 16G/512G 太空灰")
+    assert _listing(carousell, product, monkeypatch) is None
+
+
 def test_rejects_a_placeholder_listing(carousell, monkeypatch):
     """One seller's title was literally "888", with 99999 as a do-not-lowball
     price. The same title rule catches it."""

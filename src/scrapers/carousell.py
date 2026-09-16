@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 import requests
 
 from src.scrapers.base import BaseScraper, RawListing
-from src.utils.chip_extract import detect_product
+from src.utils.chip_extract import detect_product, is_intel_era_title
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,10 @@ class CarousellScraper(BaseScraper):
                 continue
             if any(w in slug.lower() for w in _EXCLUDE_TITLES):
                 continue
+            # Cheaper here than after the fetch: the newest _max_items URLs are
+            # a fixed budget, and an Intel machine spends one of them.
+            if is_intel_era_title(slug.replace("-", " ")):
+                continue
             macbooks.append((_parse_lastmod(lastmod), loc))
 
         macbooks.sort(key=lambda x: x[0], reverse=True)
@@ -157,6 +161,13 @@ class CarousellScraper(BaseScraper):
         # rejects both.
         if detect_product(title) is None:
             logger.debug("Title is not a Mac, skipping: %s", title[:40])
+            return None
+        # An Intel-era machine is out of scope, and the slug is not enough here
+        # either: the seller writes the model year in the title far more often
+        # than in the URL. PTT and Shopee both ask this; leaving it out here
+        # made the omission look deliberate to the next reader.
+        if is_intel_era_title(title):
+            logger.debug("Intel-era listing, skipping: %s", title[:40])
             return None
 
         offers = product.get("offers") or {}

@@ -176,10 +176,13 @@
 
 - **過濾機制**：
   1. **L1**：`5000 <= price <= 150000`，且標題與 slug 均不含排除字詞。
-  2. **標題必須通過 `detect_product()`**——僅比對 slug 不足：實測有 Honor 筆電以
-     「鋁合金類macbook」進入，另有賣家標題為「888」搭配 99999 佔位價。
+  2. **標題必須通過 `detect_product()`，且 `is_intel_era_title()` 為否**——
+     僅比對 slug 不足：實測有 Honor 筆電以「鋁合金類macbook」進入，另有賣家標題為
+     「888」搭配 99999 佔位價；年份與 i 系列也是賣家寫在標題遠多於寫在網址。
      slug 比對前先把連字號換成空白（`mac-mini-m4`）。桌機與筆電共用同一個
      `CAROUSELL_MAX_ITEMS` 額度，不多發請求。
+     Intel 判定在 slug 階段也做一次：最新 `CAROUSELL_MAX_ITEMS` 筆是固定額度，
+     一台 Intel 機器會占掉其中一個名額。
   3. **L2**：`offers.availability` 非 `InStock` 即視為售出；另以 `_SOLD_KEYWORDS` 比對描述作為後備。
   4. **L3**：`body_content` 上限 800 字元。
 
