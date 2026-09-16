@@ -217,7 +217,6 @@ h1 {
     line-height: 1.1;
     letter-spacing: -0.03em;
 }
-h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important; }
 
 .st-eyebrow {
     font-family: var(--font-ui);
@@ -691,7 +690,9 @@ if "min_price" not in st.session_state:
 # cannot be left off this line the way Carousell was left off the other two.
 st.markdown(f'<div class="st-eyebrow">二手 · {escape(" · ".join(SOURCE_LABELS[s] for s in SOURCES))} · 每日更新</div>',
             unsafe_allow_html=True)
-st.title("Mac 好價雷達")
+# anchor=False: the hover link icon beside the title. A CSS rule used to hide
+# it by class, and went quietly dead when Streamlit renamed that class.
+st.title("Mac 好價雷達", anchor=False)
 
 
 # Icons only; the words stay in DEVICE_CLASS_LABELS for the legend and the
