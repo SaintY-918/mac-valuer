@@ -79,6 +79,22 @@ _MODEL_CHIPS = (
 )
 
 
+def is_intel_era_title(title: str) -> bool:
+    """Whether a title carries a positive Intel-era signal.
+
+    The same two rules force_extract_chip() vetoes on, asked separately so a
+    caller can tell "this title says Intel" from "this title names no chip at
+    all". Both make force_extract_chip() return None, and they deserve
+    different treatment: a chip-less title may still have one in the body, and
+    the LLM gets to look. An i7 or a 2014 in the title is not a gap to fill.
+
+    A scraper uses this to keep the listing out of the database entirely; the
+    parser uses it to overrule a chip the LLM read from the very same title.
+    """
+    text = title or ""
+    return bool(INTEL_MARKERS.search(text) or PRE_SILICON_YEAR.search(text))
+
+
 def force_extract_chip(title: str) -> str | None:
     """Best chip found in the title, preferring the highest tier mentioned.
 
@@ -97,7 +113,7 @@ def force_extract_chip(title: str) -> str | None:
     is no single machine to score, so it is dropped rather than scored as the
     best machine at the worst machine's price.
     """
-    if INTEL_MARKERS.search(title) or PRE_SILICON_YEAR.search(title):
+    if is_intel_era_title(title):
         return None
     best = None
     for family, gen, variant in CHIP_RE.findall(title.upper()):

@@ -30,6 +30,7 @@ from src.utils.chip_extract import (
     INVALID_CHIPS,
     PRE_SILICON_YEAR,
 )
+from src.utils.logging_setup import configure_logging
 
 
 def _rejection(title: str, parsed: dict) -> str | None:
@@ -51,6 +52,11 @@ def _rejection(title: str, parsed: dict) -> str | None:
 
 
 def main() -> int:
+    # Seller titles carry emoji; without this a cp950 console dies on the
+    # first one printed, which is how this script failed to report the very
+    # rows it was written to find.
+    configure_logging()
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write changes (default: dry run)")
     args = ap.parse_args()

@@ -18,9 +18,14 @@ from src.calculator.score_engine import (
     nominal_inches,
     vfm_from_mapping,
 )
+from src.main import _is_intel_era_row
 from src.models.mac_spec import MacBookSpec, device_class
 from src.utils.benchmark_db import CHIP_BENCHMARKS, get_benchmark
-from src.utils.chip_extract import detect_product, force_extract_chip
+from src.utils.chip_extract import (
+    detect_product,
+    force_extract_chip,
+    is_intel_era_title,
+)
 
 # ── Chip extraction ───────────────────────────────────────────────────────────
 
@@ -439,3 +444,48 @@ def test_a_title_mixing_apple_silicon_with_intel_era_signals_is_not_scored(title
 ])
 def test_ordinary_apple_silicon_titles_still_extract(title):
     assert force_extract_chip(title) is not None
+
+
+# ── The veto has to survive the LLM and the year rewrite ──────────────────────
+# force_extract_chip() is only consulted when the LLM found no chip. When it
+# found one -- in the very title that says "i7" -- the veto has to be asked
+# again, and the parsed year is no help: infer_correct_year() rewrites a
+# desktop's year from its chip, so the 2012 machine came back dated 2020.
+
+def test_the_title_veto_is_asked_separately_from_the_chip():
+    title = "真猛電腦 現貨mac mini m1 2012 2014/i7/16g/500g ssd+ 4tb"
+    assert is_intel_era_title(title)
+    # exactly what the pipeline stored for this row: chip and year both clean
+    assert _is_intel_era_row("M1", 2020, title)
+
+
+def test_a_variant_name_can_carry_the_signal_the_heading_hides():
+    """Shopee titles are "<product> - <variant>". The shop names the machine in
+    the option, not the heading, and L1 only ever saw the heading."""
+    assert not is_intel_era_title("Apple MacBook Pro 二手筆電")
+    assert is_intel_era_title("Apple MacBook Pro 二手筆電 - 2017 i5 8G/256G")
+
+
+def test_a_pre_silicon_year_alone_still_vetoes():
+    """No chip named, but the machine cannot be one this project scores."""
+    assert is_intel_era_title("MacBook Pro 15 2015 16G/512G")
+
+
+@pytest.mark.parametrize("title", [
+    "MacBook Air M1 2020 8G/256G A2337",
+    "Mac mini M4 16G/256G 2024 全新",
+    "MacBook Pro 14 M3 Pro 2023 保固至2025",
+])
+def test_a_clean_title_is_not_vetoed(title):
+    assert not is_intel_era_title(title)
+    assert not _is_intel_era_row(force_extract_chip(title), 2024, title)
+
+
+def test_a_row_with_no_chip_is_left_to_the_chip_filter():
+    """Not this check's job: a chip-less row is discarded downstream, and
+    saying yes here would blur the two reasons in the log."""
+    assert not _is_intel_era_row(None, 2012, "MacBook Pro 2012 i7")
+
+
+def test_an_unparseable_year_does_not_crash_the_veto():
+    assert not _is_intel_era_row("M4", "未知", "Mac mini M4 16G/256G")

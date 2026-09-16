@@ -16,7 +16,7 @@ from playwright.async_api import BrowserContext, Page
 
 from src.scrapers.base import BaseScraper, RawListing
 from src.scrapers.shopee_api import DEFAULT_KEYWORDS, ShopeeAffiliateScraper, credentials_configured
-from src.utils.chip_extract import detect_product
+from src.utils.chip_extract import detect_product, is_intel_era_title
 
 logger = logging.getLogger(__name__)
 
@@ -217,14 +217,25 @@ class ShopeeScraper(BaseScraper):
                         unique_items.append(item)
                 logger.info("Pagination: %d total items, %d unique after dedup", len(all_items), len(unique_items))
 
-                # L1 Gatekeeper: price range + title exclusion + names a Mac.
+                # L1 Gatekeeper: price range + title exclusion + names a Mac
+                # + not an Intel-era machine.
                 # The search is by keyword, so "二手 Mac mini" also returns
                 # stands and hubs for one; the product check drops those.
+                #
+                # The Intel check is the title-level one, not
+                # mentions_apple_silicon(): a title that simply never names a
+                # chip can still have one in the description, and in detail
+                # mode the LLM gets to read it. A title saying "i7/" or "2014"
+                # is not that case. Without this, "現貨mac mini m1 2012
+                # 2014/i7/..." at NT$5,000 was stored, parsed as an M1, and
+                # topped the desktop board; the extraction rules already
+                # rejected it, but nothing asked them before the row went in.
                 candidates = [
                     item for item in unique_items
                     if L1_MIN_PRICE <= item.get("price", 0) / 100000 <= L1_MAX_PRICE
                     and not any(w in item.get("name", "") for w in _EXCLUDE_TITLES)
                     and detect_product(item.get("name", "")) is not None
+                    and not is_intel_era_title(item.get("name", ""))
                 ]
                 logger.info("L1 filter: %d / %d items passed", len(candidates), len(unique_items))
 
@@ -524,9 +535,20 @@ class ShopeeScraper(BaseScraper):
                         price = price_raw / 100000
                         model_id = model.get("modelid") or model.get("model_id")
                         model_name = model.get("name", "")
+                        # The variant name is the other half of the title, and
+                        # it is where a shop writes what it is really selling:
+                        # a listing headed "MacBook Pro M1" whose options are
+                        # "2017 i5" and "2020 M1". L1 only saw the base name,
+                        # so the Intel-era check has to be asked again on the
+                        # combined title -- the machine it describes, not the
+                        # heading it was filed under.
+                        combined_title = f"{base_name} - {model_name}"
+                        if is_intel_era_title(combined_title):
+                            logger.info("Intel-era variant, skipping: %s", combined_title[:60])
+                            continue
                         listings.append(RawListing(
                             url=f"{url}?m={model_id}",
-                            title=f"{base_name} - {model_name}",
+                            title=combined_title,
                             body_content=f"【系統自動標註：此規格售價為 {int(price)} 元】\n" + desc, source="shopee", status="available",
                         ))
 

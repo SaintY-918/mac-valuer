@@ -27,6 +27,7 @@ from src.utils.chip_extract import (
     APPLE_SILICON_FIRST_YEAR,
     INVALID_CHIPS,
     force_extract_chip,
+    is_intel_era_title,
 )
 from src.utils.logging_setup import configure_logging
 
@@ -91,6 +92,32 @@ def _read_alert_threshold(klass: str = "laptop") -> float | None:
     except ValueError:
         logger.warning("%s=%r is not a number; using default %s", name, raw, default)
         return default
+
+
+def _is_intel_era_row(chip, release_year, title: str) -> bool:
+    """Whether a parsed row claims an Apple chip it cannot have.
+
+    The chip can arrive from the LLM, which does not know about the Intel
+    collision. Two signals overrule it:
+
+    - A parsed year before 2020. Apple Silicon starts there, and the year is
+      the more trustworthy of the two because it is read from the whole
+      listing rather than matched from four characters of the title.
+    - An Intel-era signal in the title itself. The year cannot carry the veto
+      alone: infer_correct_year() rewrites a desktop's year from its chip
+      (Mac mini + M1 -> 2020), so "mac mini m1 2012 2014/i7/..." came back as
+      a 2020 M1 and sailed past the year check. force_extract_chip() refuses
+      that title outright, but it is only consulted when the LLM found no
+      chip -- and here the LLM found one, in the same title.
+    """
+    if not chip:
+        return False
+    if is_intel_era_title(title):
+        return True
+    try:
+        return bool(release_year) and int(release_year) < APPLE_SILICON_FIRST_YEAR
+    except (TypeError, ValueError):
+        return False
 
 
 def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scrape: bool = False):
@@ -264,15 +291,9 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
         if not res_dict.get("location") or res_dict.get("location") == "未知":
             res_dict["location"] = "未知"
 
-        # The chip can also arrive from the LLM, which does not know about the
-        # Intel collision either. A year before 2020 and an Apple chip cannot
-        # both be true; the year is the more trustworthy of the two, because it
-        # is read from the whole listing rather than matched from four
-        # characters of the title.
-        year = res_dict.get("release_year")
-        if res_dict.get("chip") and year and int(year) < APPLE_SILICON_FIRST_YEAR:
+        if _is_intel_era_row(res_dict.get("chip"), res_dict.get("release_year"), title):
             logger.info("Intel-era listing: discarding '%s' (chip=%s, year=%s)",
-                        title[:40], res_dict.get("chip"), year)
+                        title[:40], res_dict.get("chip"), res_dict.get("release_year"))
             if p_json:
                 db.update_parsed(url, {**p_json, "parse_input_hash": text_hash})
             continue
