@@ -268,6 +268,12 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
     color: var(--ink-faint);
 }
 .vfm-legend i { font-style: normal; }
+/* Fixed slots: the cut points differ between 筆電 and 桌機 (413 against
+   1050), and sized to their text every item after the first number slid
+   sideways on each switch. Wide enough for "≥ 9999". */
+.vfm-legend { font-variant-numeric: tabular-nums; }
+.vfm-legend > span:first-child { min-width: 4em; }
+.vfm-legend__band { min-width: 104px; }
 .vfm-legend b { width: 8px; height: 8px; border-radius: 2px; display: block; }
 
 /* ── Result rows ────────────────────────────────────────────────────────────
@@ -299,6 +305,30 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
     letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--ink-faint);
+}
+
+/* The caption is also the <summary> that opens the score breakdown. */
+.deal-how > summary { list-style: none; cursor: pointer; }
+.deal-how > summary::-webkit-details-marker { display: none; }
+.deal-how__link {
+    margin-left: 12px;
+    font-style: normal;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--accent);
+    white-space: nowrap;
+}
+.deal-how__link::after {
+    content: "›";
+    display: inline-block;
+    margin-left: 3px;
+    transition: transform var(--dur-fast) var(--ease-out);
+}
+.deal-how[open] .deal-how__link::after { transform: rotate(90deg); }
+.deal-how > summary:hover .deal-how__link { text-decoration: underline; }
+.deal-how__body {
+    padding: 18px;
+    border-bottom: 1px solid var(--line);
 }
 
 .deal {
@@ -418,18 +448,27 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
         gap: 10px;
     }
     .deal__cta { margin-top: 0; }
-    .deal-caption { padding: 9px 14px; font-size: 9.5px; }
+    .deal-caption { padding: 9px 12px; font-size: 9.5px; letter-spacing: 0.02em; gap: 8px; }
+    .deal-caption > span { white-space: nowrap; }
+    .deal-how__link { margin-left: 8px; }
     /* The first listing has to be visible without scrolling — the whole
        complaint that started this redesign was that the phone view was
        unreadable, and a masthead that fills the screen is the same problem in
-       a nicer typeface. Heading capped, stats two-up, price range last
-       because it is the only one whose digits cannot fit half a 320px row. */
+       a nicer typeface. Heading capped, and the stats on one row: the two
+       short ones take only what they need and the price range gets the rest,
+       its figures scaling with the viewport so "100,000–144,900" still fits
+       a 320px screen. Stacked two-up they cost a whole extra card row. */
     h1 { font-size: clamp(26px, 7vw, 34px) !important; }
-    .stat-row { flex-wrap: wrap; gap: 6px; }
-    .stat { flex: 1 1 calc(50% - 3px); padding: 8px 12px; }
-    .stat b { font-size: 18px; }
-    .stat--wide { order: 3; flex: 1 1 100%; }
-    .vfm-legend { gap: 10px; font-size: 11px; padding-bottom: 10px; }
+    .stat-row { gap: 6px; }
+    .stat { flex: 0 0 auto; padding: 7px 10px; }
+    .stat span { font-size: 10px; letter-spacing: 0.02em; }
+    .stat b { font-size: clamp(14px, 4.6vw, 18px); }
+    .stat--wide { flex: 1 1 0; }
+    /* Narrower slots, all four on one line down to 320px; three-digit cut
+       points still hold their place when the mode switches. */
+    .vfm-legend { flex-wrap: nowrap; gap: 6px; font-size: 10.5px; padding-bottom: 10px; }
+    .vfm-legend > span:first-child { min-width: 0; margin-right: 2px; white-space: nowrap; }
+    .vfm-legend__band { min-width: 66px; gap: 5px !important; white-space: nowrap; }
 }
 
 /* ── Score breakdown ──────────────────────────────────────────────────────
@@ -463,6 +502,9 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
     font-variant-numeric: tabular-nums;
 }
 .vfm-table td {
+    border-top: 0;
+    border-left: 0 !important;
+    border-right: 0 !important;
     padding: 9px 4px;
     border-bottom: 1px solid var(--line-soft);
     font-size: 13.5px;
@@ -555,10 +597,67 @@ h1 a.anchor-link, h2 a.anchor-link, h3 a.anchor-link { display: none !important;
 }
 
 /* ── Mode switch ──────────────────────────────────────────────────────────
-   筆電｜桌機 sits under the title because it changes what the whole page
-   means — the bands, the median, the sliders — not which rows are shown. A
-   filter lives in the sidebar; a mode does not. */
-[data-testid="stSegmentedControl"] { margin: 2px 0 6px; }
+   筆電｜桌機 changes what the whole page means — the bands, the median, the
+   sliders — not which rows are shown. It sits at the top of the sidebar,
+   above 篩選條件 and ruled off from it, the way a workspace or project
+   switcher does: the main column was stacking seven layers before the first
+   listing, and this one did not need to be among them.
+
+   A closed sidebar would hide it, and on a phone the sidebar starts closed —
+   nobody would learn that desktops exist. So a second copy under the title
+   shows exactly while the sidebar is collapsed, at any width.
+
+   Drawn as underlined tabs with icons only. The class name is still on
+   screen in words: the legend says 筆電基準／桌機基準 and the list header
+   says 筆電中位數. */
+.stButtonGroup { margin: 6px 0 10px; }
+/* In the sidebar it shares the row of the « collapse button, which is
+   otherwise 60px of empty header, and a hairline stands in for st.divider,
+   whose 32px margins left nearly 100px between the icons and 篩選條件. */
+.st-key-mode_sidebar {
+    margin-top: -56px;
+    position: relative;
+    z-index: 1;
+    width: fit-content;
+    padding-bottom: 12px;
+}
+.st-key-mode_sidebar .stButtonGroup { margin: 0; }
+[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"]:has(> .st-key-mode_sidebar) > .st-key-mode_sidebar + * {
+    border-top: 1px solid var(--line);
+    padding-top: 4px;
+}
+body:has([data-testid="stSidebar"][aria-expanded="true"]) .st-key-mode_main { display: none !important; }
+[data-testid="stSidebar"][aria-expanded="false"] .st-key-mode_sidebar { display: none !important; }
+.stButtonGroup button[data-variant="segmented_control"] {
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--ink-faint) !important;
+    padding: 4px 6px 6px !important;
+    margin-right: 14px !important;
+    min-height: 0 !important;
+    transition: color var(--dur-fast) var(--ease-out),
+                border-color var(--dur-fast) var(--ease-out);
+}
+/* Streamlit sizes the icon's wrappers for a 1rem glyph; enlarging only the
+   glyph clips it to its bottom edge. */
+.stButtonGroup button[data-variant="segmented_control"] span:has(> [data-testid="stIconMaterial"]),
+.stButtonGroup button[data-variant="segmented_control"] [data-testid="stIconMaterial"] {
+    font-size: 26px !important;
+    width: auto !important;
+    height: auto !important;
+    line-height: 1 !important;
+    overflow: visible !important;
+}
+.stButtonGroup button[data-variant="segmented_control"]:hover {
+    color: var(--accent) !important;
+}
+.stButtonGroup button[data-variant="segmented_control"][data-selected] {
+    color: var(--accent) !important;
+    border-bottom-color: var(--accent) !important;
+}
 
 /* Keep the pagination row horizontal at every width. */
 [data-testid="stHorizontalBlock"] {
@@ -595,27 +694,54 @@ st.markdown(f'<div class="st-eyebrow">二手 · {escape(" · ".join(SOURCE_LABEL
 st.title("Mac 好價雷達")
 
 
-def _on_mode_change():
+# Icons only; the words stay in DEVICE_CLASS_LABELS for the legend and the
+# list header, which is where the page says which class it is judging.
+_MODE_ICONS = {"laptop": ":material/laptop_mac:", "desktop": ":material/desktop_mac:"}
+# The same switch is drawn twice — top of the sidebar, and under the title for
+# when the sidebar is closed — and CSS shows exactly one. `device_class` is a
+# plain session value, not either widget's key, so the two copies cannot
+# disagree about which mode the page is in.
+_MODE_WIDGETS = ("mode_sidebar", "mode_main")
+for _k in _MODE_WIDGETS:
+    st.session_state.setdefault(_k, st.session_state["device_class"])
+
+
+def _on_mode_change(widget_key: str):
     """A family or size picked in one mode is not an option in the other, and
     Streamlit raises on a stored value that is no longer offered."""
-    st.session_state.update({"model_type": None, "screen_size": None, "page_num": 1})
+    picked = st.session_state[widget_key]
+    # Deselecting the active segment leaves it None; the page always has a mode.
+    if picked not in DEVICE_CLASSES:
+        picked = st.session_state["device_class"]
+    st.session_state.update({k: picked for k in _MODE_WIDGETS})
+    if picked != st.session_state["device_class"]:
+        st.session_state.update({"device_class": picked, "model_type": None,
+                                 "screen_size": None, "page_num": 1})
 
 
-mode = st.segmented_control(
-    "機種類別",
-    options=list(DEVICE_CLASSES),
-    format_func=lambda k: DEVICE_CLASS_LABELS[k],
-    key="device_class",
-    on_change=_on_mode_change,
-    label_visibility="collapsed",
-)
-# Deselecting the active segment leaves it None; the page always has a mode.
+def _mode_switch(widget_key: str):
+    st.segmented_control(
+        "機種類別",
+        options=list(DEVICE_CLASSES),
+        format_func=lambda k: _MODE_ICONS[k],
+        key=widget_key,
+        on_change=_on_mode_change,
+        args=(widget_key,),
+        label_visibility="collapsed",
+    )
+
+
+_mode_switch("mode_main")
+mode = st.session_state["device_class"]
 if mode not in DEVICE_CLASSES:
     mode = "laptop"
 _class_label = DEVICE_CLASS_LABELS[mode]
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
+    # Above the filters and ruled off from them: it decides which class the
+    # page is about, and 重置 leaves it alone.
+    _mode_switch("mode_sidebar")
     st.markdown("## :material/search: 篩選條件")
 
     model_type = st.selectbox(
@@ -834,9 +960,9 @@ if banded:
     st.markdown(f"""
 <div class="vfm-legend">
   <span style="color:var(--ink-soft);font-weight:500;">{_class_label}基準</span>
-  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--good);"></b><i>划算</i> ≥ {p75:.0f}</span>
-  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--mid);"></b><i>普通</i> ≥ {p50:.0f}</span>
-  <span style="display:flex;gap:7px;align-items:center;"><b style="background:var(--low);"></b><i>偏貴</i> &lt; {p50:.0f}</span>
+  <span class="vfm-legend__band" style="display:flex;gap:7px;align-items:center;"><b style="background:var(--good);"></b><i>划算</i> ≥ {p75:.0f}</span>
+  <span class="vfm-legend__band" style="display:flex;gap:7px;align-items:center;"><b style="background:var(--mid);"></b><i>普通</i> ≥ {p50:.0f}</span>
+  <span class="vfm-legend__band" style="display:flex;gap:7px;align-items:center;"><b style="background:var(--low);"></b><i>偏貴</i> &lt; {p50:.0f}</span>
 </div>
 """, unsafe_allow_html=True)
 else:
@@ -858,7 +984,11 @@ else:
 # What survived is the arithmetic on a real listing. Annotating why each
 # multiplier applied lets it carry the rules as well, so nothing was lost by
 # deleting the table that duplicated them.
-with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
+#
+# Built here, drawn inside the list header below: a full-width expander bar
+# was one more boxed layer between the title and the first listing, for
+# something most visits never open.
+def _score_breakdown_html() -> str:
     top = df.iloc[0].to_dict()
     chip_t = str(top.get("chip") or "")
     base_t = get_benchmark(chip_t)
@@ -893,21 +1023,18 @@ with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
         for label, value in steps
     )
 
-    st.markdown(
-        f'''
-<div class="vfm-calc">
-  <p class="vfm-formula">VFM　=　晶片基準 × 年份折舊 × RAM 加成 × SSD 加成 × 形態加成
-    　÷　售價　×　1000</p>
-  <p class="vfm-lead">以目前榜首為例，數字全部取自左側的評分設定——調整滑桿，這裡跟著變。</p>
-  <p class="vfm-subject">{escape(str(top.get("original_title") or "")[:60])}</p>
-  <table class="vfm-table">
-    {rows_html}
-    <tr class="sum"><td>調整後分數</td><td class="num">{adj_t:,.0f}</td></tr>
-    <tr class="total"><td>÷ 售價 {int(price_t):,} × 1000</td>
-        <td class="num">{adj_t / price_t * 1000:,.0f}</td></tr>
-  </table>
-</div>
-''', unsafe_allow_html=True)
+    calc = (
+        '<div class="vfm-calc">'
+        '<p class="vfm-formula">VFM　=　晶片基準 × 年份折舊 × RAM 加成 × SSD 加成 × 形態加成'
+        '　÷　售價　×　1000</p>'
+        '<p class="vfm-lead">以目前榜首為例，數字全部取自左側的評分設定——調整滑桿，這裡跟著變。</p>'
+        f'<p class="vfm-subject">{escape(str(top.get("original_title") or "")[:60])}</p>'
+        f'<table class="vfm-table">{rows_html}'
+        f'<tr class="sum"><td>調整後分數</td><td class="num">{adj_t:,.0f}</td></tr>'
+        f'<tr class="total"><td>÷ 售價 {int(price_t):,} × 1000</td>'
+        f'<td class="num">{adj_t / price_t * 1000:,.0f}</td></tr>'
+        '</table></div>'
+    )
 
     # Ordered by generation, not by score. Sorting on the number put M5 Max,
     # M5 Pro, M2 Ultra, M4 Max and M1 Ultra in the visible rows of a 210px
@@ -923,14 +1050,15 @@ with st.expander(":material/bar_chart: VFM 分數構成 — 點此展開"):
         f'<div class="bench"><span>{escape(name)}</span><b>{score:,}</b></div>'
         for name, score in sorted(CHIP_BENCHMARKS.items(), key=lambda kv: _chip_order(kv[0]))
     )
-    st.markdown(
-        f'''
-<p class="vfm-lead" style="margin-top:22px">晶片基準分　·　Geekbench 6 多核心，來源標註於
-  <code>src/utils/benchmark_db.py</code>　·　查無晶片時以 {get_benchmark("_unknown_"):,} 計</p>
-<div class="bench-grid">{cells}</div>
-''', unsafe_allow_html=True)
+    # One line, no blank lines: this ends up inside a Markdown call, where an
+    # empty line closes the HTML block and the rest is printed as text.
+    return calc + (
+        '<p class="vfm-lead" style="margin-top:22px">晶片基準分　·　Geekbench 6 多核心，來源標註於 '
+        '<code>src/utils/benchmark_db.py</code>'
+        f'　·　查無晶片時以 {get_benchmark("_unknown_"):,} 計</p>'
+        f'<div class="bench-grid">{cells}</div>'
+    )
 
-st.markdown("")
 
 # ── Pagination state ───────────────────────────────────────────────────────────
 # Configurable so the browser tests can page through a small fixture rather than
@@ -1050,9 +1178,13 @@ deals = [
 # The unit is stated once here instead of on every row, and the median gives
 # the number a reference point: 750 means nothing until you know the middle of
 # the set is 626.
+#
+# The header doubles as the toggle for the score breakdown: a native
+# <details>, so opening it costs no rerun and works from the keyboard.
 _caption = (
-    '<div class="deal-caption">'
-    '<span>CP 值 — 效能分 / 每千元</span>'
+    '<details class="deal-how">'
+    '<summary class="deal-caption">'
+    '<span>CP 值 — 效能分 / 每千元<em class="deal-how__link">分數怎麼算？</em></span>'
     # "筆電" / "桌機", not just "中位數": these come from every available
     # listing of the class, not from the rows currently shown. Filtering to
     # four items must not move the standard a listing is judged against — that
@@ -1060,7 +1192,9 @@ _caption = (
     # label has to say so.
     + (f'<span>{_class_label}中位數 {p50:.0f}</span>' if banded
        else f'<span>{_class_label}樣本不足，未分級</span>') +
-    '</div>'
+    '</summary>'
+    f'<div class="deal-how__body">{_score_breakdown_html()}</div>'
+    '</details>'
 )
 st.markdown(f'<div class="deal-list">{_caption}{"".join(deals)}</div>',
             unsafe_allow_html=True)

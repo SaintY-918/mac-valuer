@@ -136,7 +136,7 @@ Dashboard 的滑桿標籤與說明區都讀這兩個常數，不用另外改。s
    ```
 
 2. **手動驗算：** 用一筆已知資料（例如 M2 Air 16GB/512GB 售價 30000，2022 年）手算 VFM，
-   比對 Dashboard「VFM 分數構成」區的逐項數字。
+   比對 Dashboard 清單表頭「分數怎麼算？」展開後的逐項數字。
 
 3. **API 驗證：** `POST /api/score/calculate` 傳入自訂 weights，確認回傳值反映修改。
 

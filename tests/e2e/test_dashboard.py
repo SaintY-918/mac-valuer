@@ -114,6 +114,17 @@ def test_hiding_defects_removes_exactly_those_cards(fresh_page):
     assert not any(c["defect"] for c in after)
 
 
+def test_the_list_header_opens_the_score_breakdown(fresh_page):
+    """The breakdown sits folded inside the list header, not in a bar of its
+    own, and its worked example ends on the top listing's own score."""
+    body = fresh_page.locator(".deal-how__body")
+    assert not body.is_visible()
+    fresh_page.locator(".deal-how__link").click()
+    body.wait_for(state="visible", timeout=5_000)
+    total = body.locator(".vfm-table tr.total td.num").inner_text()
+    assert total == _cards(fresh_page)[0]["score"]
+
+
 def test_filtering_does_not_move_the_standard(fresh_page):
     """The verdict bands come from every available listing, not the filtered
     view. Narrowing to a handful of machines must not change what counts as a
@@ -240,8 +251,14 @@ def test_no_placeholder_or_error_text_leaked_into_the_page(page):
 # always sit on top; judged against the laptop median it would always read as
 # a bargain. The switch changes the whole page — rows, bands, sliders.
 
+def _mode_tab(pg, icon):
+    """The switch is icons only; a Material icon is its ligature name in the
+    DOM. It is drawn twice — sidebar and under the title — and CSS shows one."""
+    return pg.locator('[data-testid="stButtonGroup"] [role="radio"]:visible', has_text=icon)
+
+
 def _switch_to_desktops(pg):
-    pg.get_by_text("桌機", exact=True).first.click()
+    _mode_tab(pg, "desktop_mac").click()
     pg.wait_for_function(
         f"document.querySelectorAll('.deal').length === {len(DESKTOP_LISTINGS)}",
         timeout=30_000,
@@ -252,6 +269,22 @@ def test_the_page_opens_on_laptops_and_shows_no_desktop(page):
     """Existing readers see exactly what they saw before desktops existed."""
     hrefs = {c["href"] for c in _cards(page)}
     assert not hrefs & {row["url"] for row in DESKTOP_LISTINGS}
+
+
+def test_one_mode_switch_is_shown_and_both_copies_agree(fresh_page):
+    """Sidebar open: the switch is in the sidebar. Sidebar closed: it is under
+    the title, and it still says what the sidebar copy chose."""
+    main = fresh_page.locator(".st-key-mode_main")
+    side = fresh_page.locator(".st-key-mode_sidebar")
+    assert side.is_visible() and not main.is_visible()
+
+    _switch_to_desktops(fresh_page)
+    fresh_page.get_by_test_id("stSidebar").hover()
+    fresh_page.get_by_test_id("stSidebarCollapseButton").locator("button").click()
+    main.wait_for(state="visible", timeout=10_000)
+    assert not side.is_visible()
+    selected = main.locator('[role="radio"][aria-checked="true"]')
+    assert selected.inner_text() == "desktop_mac"
 
 
 def test_switching_to_desktops_shows_only_desktops(fresh_page):
@@ -323,7 +356,7 @@ def test_switching_modes_and_then_filtering_does_not_crash(fresh_page):
 
     # And back again: the laptop weights survived the round trip, so the
     # scores are the backend's, not defaults or garbage.
-    fresh_page.get_by_text("筆電", exact=True).first.click()
+    _mode_tab(fresh_page, "laptop_mac").click()
     fresh_page.wait_for_function(
         f"document.querySelectorAll('.deal').length === {len(LISTINGS) - len(DEFECT_URLS)}",
         timeout=30_000,
