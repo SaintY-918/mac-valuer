@@ -38,6 +38,10 @@ DEFAULT_ALERT_VFM_THRESHOLD = 500.0
 # is not evidence a listing is gone — see DBManager.sweep_stale.
 STALE_DAYS = int(os.getenv("STALE_DAYS", "14"))
 
+# Upper bound on listings revisited per source per run, longest unseen first.
+# Carousell at its default delay spends about half a second per listing.
+RECHECK_MAX_PER_SOURCE = int(os.getenv("RECHECK_MAX_PER_SOURCE", "200"))
+
 configure_logging()
 logger = logging.getLogger(__name__)
 
@@ -130,6 +134,8 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
     # source -> error string. A source in here failed outright; its 0 count means
     # "broken", not "nothing new today".
     source_errors: dict[str, str] = {}
+    # source -> outcome -> count, from Step 1b.
+    revisit_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     if skip_scrape:
         print("=== Step 1: Skipped (--skip-scrape) — reusing existing DB data ===")
@@ -179,6 +185,32 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
                 db.save_deal(listing.url, listing.title, listing.body_content,
                              status="sold", source=listing.source)
                 upsert_counts[src] += 1
+            else:
+                # Seen again. This branch used to do nothing, so last_seen was
+                # never refreshed after the first sighting and every listing,
+                # live or not, aged out on day STALE_DAYS. Sold stays sold.
+                db.record_revisit(listing.url,
+                                  "sold" if existing.get("status") == "sold" else listing.status)
+
+        # Step 1b: Revisit what the window no longer shows. Each scraper reads
+        # only its newest listings, so without this a deleted listing stays on
+        # the dashboard as available until the age-based sweep in Step 6.
+        if not dry_run:
+            for src_name, scraper in selected.items():
+                if src_name in source_errors or not scraper.REVISITS:
+                    continue
+                urls = [u for u in db.available_urls(src_name)
+                        if u not in urls_seen_by_source[src_name]][:RECHECK_MAX_PER_SOURCE]
+                if not urls:
+                    continue
+                outcomes = asyncio.run(scraper.revisit(urls))
+                tally = revisit_counts[src_name]
+                for url, outcome in outcomes.items():
+                    if outcome is None:
+                        tally["unknown"] += 1
+                    elif db.record_revisit(url, outcome):
+                        tally[outcome] += 1
+                logger.info("Revisit source='%s': checked=%d %s", src_name, len(urls), dict(tally))
 
     if dry_run:
         print(f"\n=== DRY-RUN: {len(raw_listings)} listings survived scraper filters ===")
@@ -424,6 +456,7 @@ def run_valuation_pipeline(source: str = "all", dry_run: bool = False, skip_scra
             "counts": {src: upsert_counts.get(src, 0) for src in sorted(sources_attempted)},
             "errors": source_errors,
             "alerts_sent": alerts_sent,
+            "revisits": {src: dict(t) for src, t in revisit_counts.items()},
             # Reported separately from source_errors: no scraper failed, and
             # calling it a scrape failure would be a lie that also hides the
             # one thing worth acting on.

@@ -232,6 +232,7 @@ git ls-files | xargs grep -lniE '<你的email>|<內網IP前綴>|<你的使用者
 | `ModuleNotFoundError: No module named 'pandas'` | 用了系統 Python，要用 `.\venv\Scripts\python.exe` |
 | `ModuleNotFoundError: No module named 'src'` | 不在專案根目錄，或直接跑了 `src/dashboard.py` |
 | Discord 顯示 ⛔ 某來源失敗 | 訊息裡有失敗原因；蝦皮看網址：`scene=crawler_item` 是被判成爬蟲（先確認沒用 headless），`is_logged_in=false` 是 session 已作廢，重登一次 |
+| Discord 回查那行「無法判斷」整批偏高 | 回查被擋（例如旋轉拍賣 403），不是沒有東西下架。被擋的物件不會被改動，14 天 sweep 仍會接手；見 [decisions #45](decisions.md#45-回查已存物件年齡老化降為後備蝦皮不回查) |
 | 排程 `LastTaskResult` 非 0 | 看 `logs/scrape_YYYY-MM-DD.log` |
 | Neon 連線 timeout | 網路可能擋 5432 埠，換行動網路測試。`DBManager` 已設定 `connect_timeout=10`，失敗會在 10 秒內浮現，不會卡住整條 pipeline |
 | Dashboard 顯示舊版 | Streamlit Cloud 快取，用無痕視窗開 |

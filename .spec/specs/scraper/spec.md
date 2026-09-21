@@ -1,3 +1,38 @@
+### 3.U 回查：直接開已存物件的頁面
+
+每個爬蟲讀的都是最新物件的**視窗**，一筆資料通常只被看到一次就滑出視窗，之後的刪文、售出
+都不會被發現。`BaseScraper.check_listing(url)` 回到物件自己的頁面看一次，回傳：
+
+| 值 | 意義 |
+|---|---|
+| `available` | 還在賣 |
+| `sold` | 頁面還在，但已售出 |
+| `gone` | 平台明確表示物件不存在 |
+| `None` | **這次什麼都證明不了**（逾時、被擋、頁面格式不認得） |
+
+**`None` 絕不可當成 `gone`。** 被擋的請求對物件本身沒有任何資訊；403 與 5xx 一律拋例外，
+由 `revisit()` 轉成 `None`。只有下表列出的狀態碼算 `gone`。
+
+| 來源 | `REVISITS` | `gone` | `sold` |
+|---|---|---|---|
+| PTT | ✅ | 404（刪文） | 內文或標題（`main-content` 開頭即標題列）含 `_SOLD_KEYWORDS` |
+| 旋轉拍賣 | ✅ | 404 或 410（2026-09-21 實測 86 筆，刪除者只有這兩種回應） | 與 L2 相同：`availability` 非 `InStock`，或描述含售出字詞（共用 `_is_sold()`） |
+| 蝦皮 | ❌ | — | — |
+
+蝦皮不回查：純 HTTP 取任何商品頁都得到同一個約 204 KB 的 JavaScript 外殼，
+判斷需要瀏覽器，而瀏覽器路徑每多一次載入就多一分被判為爬蟲的風險（3.X）。
+改用聯盟 API 後可重新評估。
+
+**Pipeline（`main.py` Step 1b）**：本次爬取成功、且 `REVISITS` 為真的來源，取其
+`available` 且本次視窗沒看到的物件，依 `last_seen` 由舊到新最多 `RECHECK_MAX_PER_SOURCE`
+筆（預設 200），結果交給 `DBManager.record_revisit()`（見 `database/spec.md` 5.X.2）。
+爬取失敗的來源不回查——與 sweep 相同理由：那次執行很可能整個被擋。`--dry-run` 不回查。
+heartbeat 每個來源一行，列出下架／售出／仍在架／**無法判斷**；最後一項整批偏高代表回查被擋，
+而不是「沒有東西下架」。
+
+`revisit()` 的 semaphore 在方法內建立，不沿用 `__init__` 的：回查跑在另一個
+`asyncio.run()` 裡，而曾在 `fetch_listings` 的 loop 中等待過的 semaphore 已綁定該 loop。
+
 ### 3.V 產品偵測：三個爬蟲共用一個規則
 
 `src/utils/chip_extract.py` 的 `detect_product(title)` 回傳 `macbook`／`mac mini`／

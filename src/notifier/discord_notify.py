@@ -72,6 +72,13 @@ def _heartbeat_content(stats: dict) -> str:
         else:
             lines.append(f"- ✅ {_label(source)}：新增/更新 **{counts.get(source, 0)}** 筆")
 
+    # Unknown is shown because a revisit that proves nothing for every listing
+    # (a block, a layout change) would otherwise look like "nothing was gone".
+    for source, t in sorted((stats.get("revisits") or {}).items()):
+        lines.append(f"- 🔁 {_label(source)}回查：下架 **{t.get('gone', 0)}**、"
+                     f"售出 **{t.get('sold', 0)}**、仍在架 {t.get('available', 0)}"
+                     f"、無法判斷 {t.get('unknown', 0)}")
+
     lines.append(f"- 觸發警報：**{alerts_sent}** 筆")
 
     # Reported on its own line, not as a scraper failure. Every source may have

@@ -85,11 +85,14 @@ class CarousellScraper(BaseScraper):
     # HTTP
     # ------------------------------------------------------------------
 
-    def _get(self, url: str) -> str:
-        resp = requests.get(
+    def _response(self, url: str) -> requests.Response:
+        return requests.get(
             url, headers={"User-Agent": USER_AGENT, "Accept-Language": "zh-TW,zh;q=0.9"},
             timeout=HTTP_TIMEOUT,
         )
+
+    def _get(self, url: str) -> str:
+        resp = self._response(url)
         resp.raise_for_status()
         return resp.text
 
@@ -140,6 +143,28 @@ class CarousellScraper(BaseScraper):
                 return data
         return None
 
+    @staticmethod
+    def _is_sold(product: dict) -> bool:
+        # L2: schema.org availability is authoritative; the description is a
+        # backstop for sellers who mark a sale in text without updating status.
+        availability = str((product.get("offers") or {}).get("availability") or "")
+        description = (product.get("description") or "").lower()
+        return "InStock" not in availability or any(k in description for k in _SOLD_KEYWORDS)
+
+    REVISITS = True
+
+    def check_listing(self, url: str) -> str | None:
+        # Measured 2026-09-21 on 86 stored listings: a deleted one answers 410
+        # or 404, never a redirect or a soft "not found" page.
+        resp = self._response(url)
+        if resp.status_code in (404, 410):
+            return "gone"
+        resp.raise_for_status()
+        product = self._product_jsonld(resp.text)
+        if not product:
+            return None
+        return "sold" if self._is_sold(product) else "available"
+
     def _fetch_one(self, url: str) -> RawListing | None:
         try:
             product = self._product_jsonld(self._get(url))
@@ -181,11 +206,7 @@ class CarousellScraper(BaseScraper):
 
         description = (product.get("description") or "").strip()
 
-        # L2: schema.org availability is authoritative; the description is a
-        # backstop for sellers who mark a sale in text without updating status.
-        availability = str(offers.get("availability") or "")
-        sold = "InStock" not in availability or any(
-            k in description.lower() for k in _SOLD_KEYWORDS)
+        sold = self._is_sold(product)
 
         body = f"【系統自動標註：此商品售價為 {int(price)} 元】\n{description}"
         return RawListing(

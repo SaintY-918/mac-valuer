@@ -84,6 +84,24 @@ class PTTScraper(BaseScraper):
         resp.encoding = "utf-8"
         return resp.text
 
+    REVISITS = True
+
+    def check_listing(self, url: str) -> Optional[str]:
+        # A seller who deletes the post leaves a 404. Sellers also delete right
+        # after selling, so most sales show up here as 'gone', not 'sold'.
+        resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT)
+        if resp.status_code == 404:
+            return "gone"
+        resp.raise_for_status()
+        resp.encoding = "utf-8"
+        text = _main_content_text(resp.text)
+        if not text:
+            return None
+        # main-content opens with the title line, so an edited "已售出" title
+        # is caught here too.
+        body = text.split("--")[0]
+        return "sold" if any(kw in body for kw in _SOLD_KEYWORDS) else "available"
+
     async def _body_text(self, url: str) -> str:
         page_html = await asyncio.to_thread(self._get, url)
         text = _main_content_text(page_html)

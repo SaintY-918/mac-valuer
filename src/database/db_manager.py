@@ -175,6 +175,53 @@ class DBManager:
             logger.error("DB update_parsed error for %s: %s", url, e)
             return False
 
+    def available_urls(self, source: str) -> List[str]:
+        """URLs of `source` still marked available, longest unseen first."""
+        try:
+            with self.Session() as session:
+                rows = (
+                    session.query(Deal.url)
+                    .filter(Deal.source == source, Deal.status == "available")
+                    .order_by(Deal.last_seen.asc())
+                    .all()
+                )
+                return [r[0] for r in rows]
+        except Exception as e:
+            logger.error("DB available_urls error (source=%s): %s", source, e)
+            return []
+
+    def record_revisit(self, url: str, outcome: str) -> bool:
+        """Apply what a visit to the listing's own page found.
+
+        'available' and 'sold' are sightings, so they refresh last_seen.
+        'gone' is not: the page is not there, and nothing was seen. It retires
+        the row directly instead of waiting for sweep_stale().
+
+        Deliberately not save_deal(): that rewrites title, body and status from
+        a scrape, and a revisit has only the outcome.
+        """
+        if outcome not in ("available", "sold", "gone"):
+            raise ValueError(f"unknown revisit outcome: {outcome!r}")
+        now = datetime.now(timezone.utc)
+        try:
+            with self.Session() as session:
+                deal = session.get(Deal, url)
+                if not deal:
+                    return False
+                if outcome == "gone":
+                    deal.status = "unavailable"
+                    deal.updated_at = now
+                else:
+                    if deal.status != outcome:
+                        deal.status = outcome
+                        deal.updated_at = now
+                    deal.last_seen = now
+                session.commit()
+                return True
+        except Exception as e:
+            logger.error("DB record_revisit error for %s: %s", url, e)
+            return False
+
     def update_last_alerted_price(self, url: str, price: int) -> bool:
         """Persist the price at which a notifier alert was just sent."""
         try:
