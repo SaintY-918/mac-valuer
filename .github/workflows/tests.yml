@@ -24,8 +24,8 @@ jobs:
 
       # Installs the real requirements rather than a hand-listed subset. The
       # subset drifted and the job had been failing at collection: tests import
-      # src.scrapers, whose __init__ loads every scraper, so feedparser and
-      # playwright were needed, plus tabulate for src.main and google-genai for
+      # src.scrapers, whose __init__ loads every scraper, so feedparser (since
+      # removed) and playwright were needed, plus tabulate for src.main and google-genai for
       # the parser. None of the four were listed.
       #
       # The subset existed on the belief that requirements.txt fetches browser

@@ -7,7 +7,7 @@
 ## 整體流程（四個步驟）
 
 ```
-[Step 1] RSS 抓取 + 標題過濾
+[Step 1] 看板列表頁 + 標題過濾
        ↓
 [Step 2] HTTP 抓取內文 + 售出偵測
        ↓
@@ -18,21 +18,25 @@
 
 ---
 
-## Step 1：RSS Feed 的天然限制
+## Step 1：看板列表頁
 
-**來源：** `https://www.ptt.cc/atom/MacShop.xml`
+**來源：** `https://www.ptt.cc/bbs/MacShop/index.html`，往「‹ 上頁」翻
 
-PTT 的 Atom Feed **只包含最新的約 20 篇文章**。這是 PTT 官方 RSS 的硬限制，無法透過參數調整。
+從最新頁往前翻，收錄最近 `PTT_LOOKBACK_HOURS`（預設 36）小時的文章，上限
+`PTT_MAX_PAGES`（預設 40）頁。發文時間取自文章代碼 `M.<unix 秒>.A.<hex>`；
+最新頁的置頂文（`r-list-sep` 之後）會排除。
 
-每次執行 pipeline，最多只會看到當下版面最新的 20 篇文，不是歷史全部文章。
+這裡原本用 Atom Feed（`/atom/MacShop.xml`），但它**固定只有最新 20 篇**。2026-09-21
+iPhone 18 上市洗版時，20 篇只涵蓋 2.5 小時，前 5 天的 11 篇 Mac 販售文全部漏抓
+（見 `docs/decisions.md` #46）。平常一天約 130 篇，36 小時約 10～12 頁。
 
-### 標題過濾（在 RSS 這一層就剔除）
+### 標題過濾（在列表這一層就剔除）
 
 只有同時滿足以下條件的文章才會進入爬取隊列：
 
 | 條件 | 規則 |
 |------|------|
-| 包含 "macbook"（不分大小寫） | 排除非 MacBook 的販售（如 iPad） |
+| `detect_product()` 認得是 Mac | MacBook／Mac mini／Mac Studio；排除 iPad mini 等 |
 | 標題提及 Apple Silicon | `src/utils/chip_extract.py` 的 `mentions_apple_silicon()`，涵蓋 M 系列與 A 系列（不是寫死的 `m1`~`m4` 清單——那個清單曾經靜靜漏掉每一款 M5 與 A 系列機型，見 `docs/decisions.md`） |
 | **不**包含排除標籤 | `[徵]`, `[交換]`, `intel`, `i5`, `i7`, `i9`, `2017`, `2018` |
 
@@ -41,7 +45,7 @@ PTT 的 Atom Feed **只包含最新的約 20 篇文章**。這是 PTT 官方 RSS
 - ✅ `[販售] MacBook Air M2 16/512` → 通過
 - ❌ `[徵] MacBook M3` → 被 `[徵]` 排除
 - ❌ `[販售] MacBook Pro 2018 intel i7` → 被 `intel`/`i7`/`2018` 排除
-- ❌ `[販售] iPad Air M2` → 不含 "macbook" 排除
+- ❌ `[販售] iPad Air M2` → `detect_product()` 不認得
 
 ---
 
@@ -218,11 +222,11 @@ python -m src.main
 ## 資料流程圖（完整）
 
 ```
-PTT RSS Feed (~20 篇)
+PTT 看板列表頁（最近 36 小時）
        │
        ▼
   標題過濾
-  (chip/macbook/排除標籤)
+  (晶片/機型/排除標籤)
        │
        ▼
 HTTP 並行抓內文

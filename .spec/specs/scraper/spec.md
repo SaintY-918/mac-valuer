@@ -52,8 +52,8 @@ heartbeat 每個來源一行，列出下架／售出／仍在架／**無法判�
 **目標**：抓取 PTT MacShop 板的二手 Mac 讓售文。
 
 - **實作與繼承**：`PTTScraper` 繼承 `BaseScraper`，`source="ptt"`。
-- **傳輸方式**：**純 HTTP，不使用瀏覽器**。清單來自 Atom feed
-  （`https://www.ptt.cc/atom/MacShop.xml`），內文來自文章頁的
+- **傳輸方式**：**純 HTTP，不使用瀏覽器**。清單來自看板列表頁
+  （`https://www.ptt.cc/bbs/MacShop/index.html`，往「‹ 上頁」翻），內文來自文章頁的
   `<div id="main-content">`，兩者皆為伺服器端渲染的靜態內容。
   因此**可在 GitHub Actions 上執行**，不依賴本機。
 
@@ -65,6 +65,20 @@ heartbeat 每個來源一行，列出下架／售出／仍在架／**無法判�
   改為純 HTTP 前已比對過：`_main_content_text()` 與 Playwright 的
   `inner_text()` 在六篇實際文章上，正規化空白後**完全相同**。瀏覽器沒有換到
   任何東西。**不存在的相依不會被忘記**。
+
+- **清單範圍：以時間為準，不以篇數為準。**
+  - 從最新頁往前翻，收錄發文時間在 `PTT_LOOKBACK_HOURS`（預設 36）內的文章；
+    某一頁出現早於期限的文章後就停。`PTT_MAX_PAGES`（預設 40，約 800 篇）是上限，
+    撞到上限會記 warning，因為那代表漏抓。
+  - 發文時間取自文章代碼 `M.<unix 秒>.A.<hex>`，不必另外解析日期欄。
+  - 最新頁在 `<div class="r-list-sep">` 之後是置頂文，**必須排除**：置頂文動輒數個月前，
+    算進去會讓翻頁在第一頁就停止。
+  - 已刪除的文章在列表上沒有連結，自然不會被收錄。
+  - 回溯超過一天，是因為 pipeline 一天跑一次，GitHub 的 cron 又可能延遲一小時以上。
+    重疊只多幾個內文請求；缺口則是漏抓。
+  - **不可**改回 Atom feed（`/atom/MacShop.xml`）：它固定只有最新 20 篇。2026-09-21
+    這 20 篇只涵蓋 2.5 小時，而且被 iPhone 18 上市的販售文洗滿；回溯 5 天的 11 篇
+    Mac 販售文全部漏抓，排程卻連續 6 晚顯示成功（decisions #46）。
 
 - **內文抽取（`_main_content_text`）**：
   - 自 `id="main-content"` 起取到文件結尾，**不嘗試配對巢狀 `</div>`**——
@@ -79,12 +93,11 @@ heartbeat 每個來源一行，列出下架／售出／仍在架／**無法判�
 
 - **過濾機制**：標題須通過 `detect_product()`（MacBook／Mac mini／Mac Studio）與
   `mentions_apple_silicon()`，且不含 `_EXCLUDE_TITLES`（徵求、交換、Intel 世代）。
-  桌機不多花任何請求：feed 本來就包含它們，只是過去被 `"macbook"` 子字串擋掉。
+  桌機不多花任何請求：列表本來就包含它們，只是過去被 `"macbook"` 子字串擋掉。
 - **售出判定**：以 `_SOLD_KEYWORDS` 比對內文。
-- **失敗語意**：**feed 取不到任何 entry 時必須拋出例外。**
-  feedparser 對網路失敗的回報方式是「一個沒有 entries 的物件」而非例外，
-  若照樣回傳空 list，heartbeat 會顯示「0 筆」——與真正的平靜夜晚無法區分，
-  正是本專案在別處已修掉的那種混淆。
+- **失敗語意**：**列表頁讀不到任何文章時必須拋出例外。** 看板不會是空的，讀不到代表
+  版面改了。若照樣回傳空 list，heartbeat 會顯示「0 筆」——與真正的平靜夜晚無法區分，
+  正是本專案在別處已修掉的那種混淆。列表頁的 HTTP 錯誤直接往上拋。
 
 ---
 
@@ -136,7 +149,7 @@ heartbeat 每個來源一行，列出下架／售出／仍在架／**無法判�
     導去重新登入，但登入不是問題所在。
   - Pipeline 收到例外時，該來源必須被記入 `source_errors`，並**跳過該來源的 sweep**（否則會把整批既有物件誤標為 `unavailable`）。
 - **下架判定（Retirement）**：
-  - 本專案所有爬蟲取得的都是**取樣視窗**，不是完整庫存：PTT 讀 Atom feed 的近期文章，蝦皮讀最新約 180 筆搜尋結果。
+  - 本專案所有爬蟲取得的都是**取樣視窗**，不是完整庫存：PTT 讀最近 `PTT_LOOKBACK_HOURS` 的文章，蝦皮讀最新約 180 筆搜尋結果。
   - 因此**不得**以「本次執行沒看到」作為下架依據。實測結果：蝦皮兩次執行的商品集合可能完全不相交（35 個舊商品 vs 30 個新商品，重疊 0），舊集合並非售出，只是被擠出最新清單。
   - 正確作法為 `DBManager.sweep_stale(source, max_age_days)`：僅當 `last_seen` 超過 `STALE_DAYS`（預設 14 天）未更新才標記 `unavailable`。
   - 真正的售出／下架偵測仍由爬蟲自身負責——PTT 靠 `_SOLD_KEYWORDS` 比對內文，蝦皮靠 L2 的 `has_stock` / `is_grayout` / `stock_info_v2` 檢查商品本身。

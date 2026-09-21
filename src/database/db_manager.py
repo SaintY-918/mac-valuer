@@ -256,8 +256,8 @@ class DBManager:
         """Mark `available` rows of `source` not seen for `max_age_days` as `unavailable`.
 
         Deliberately age-based rather than set-based. Every scraper here samples a
-        *window* rather than enumerating full inventory — PTT reads an Atom feed of
-        recent posts, Shopee reads the newest ~180 search results — so "absent from
+        *window* rather than enumerating full inventory — PTT reads the last
+        PTT_LOOKBACK_HOURS of posts, Shopee reads the newest ~180 search results — so "absent from
         this run" does not mean "delisted", it usually just means the listing scrolled
         out of the window. The previous set-based sweep marked 46 live Shopee listings
         unavailable in a single run because the search window had rotated completely.

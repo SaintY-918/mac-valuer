@@ -12,7 +12,7 @@ the payload each platform returns.
 import asyncio
 import concurrent.futures
 import re
-from types import SimpleNamespace
+import time
 
 import pytest
 
@@ -221,17 +221,71 @@ def test_the_signature_separator_still_cuts_the_body(monkeypatch):
     assert "發信站" not in body
 
 
-def test_an_unreachable_feed_raises_instead_of_looking_like_a_quiet_day(monkeypatch):
-    """feedparser reports a network failure as an object with no entries.
+def _index_page(posts, prev=None, pinned=()):
+    """One PTT board index page: (article id, title) rows, then pinned rows."""
+    def row(aid, title):
+        return (f'<div class="r-ent"><div class="title">\n'
+                f'<a href="/bbs/MacShop/{aid}.html">{title}</a>\n</div></div>')
+    nav = (f'<a class="btn wide" href="/bbs/MacShop/{prev}.html">&lsaquo; 上頁</a>'
+           if prev else '<a class="btn wide disabled">&lsaquo; 上頁</a>')
+    return (nav + "".join(row(a, t) for a, t in posts)
+            + '<div class="r-list-sep"></div>' * bool(pinned)
+            + "".join(row(a, t) for a, t in pinned))
+
+
+def _aid(hours_ago):
+    return f"M.{int(time.time() - hours_ago * 3600)}.A.ABC"
+
+
+def test_an_unrecognisable_index_raises_instead_of_looking_like_a_quiet_day(monkeypatch):
+    """The board is never empty, so no posts at all means the markup changed.
 
     Returning [] there would reach the heartbeat as "0 筆" — indistinguishable
     from a genuinely quiet board, which is the confusion decisions #21 fixed
     everywhere else.
     """
-    dead = SimpleNamespace(entries=[], bozo=1, bozo_exception="connection refused")
-    monkeypatch.setattr("src.scrapers.ptt.feedparser.parse", lambda url: dead)
-    with pytest.raises(RuntimeError, match="no entries"):
-        _run(PTTScraper().fetch_listings())
+    scraper = PTTScraper()
+    monkeypatch.setattr(scraper, "_get", lambda url: "<html>redesigned</html>")
+    with pytest.raises(RuntimeError, match="no posts"):
+        _run(scraper.fetch_listings())
+
+
+def test_walks_back_until_the_posts_are_older_than_the_lookback(monkeypatch):
+    """The Atom feed held 20 posts. On 2026-09-21 that was two and a half hours
+    of iPhone 18 listings, and all 11 Macs posted in the previous five days
+    were missed."""
+    monkeypatch.setattr("src.scrapers.ptt.LOOKBACK_HOURS", 36)
+    pages = {
+        "https://www.ptt.cc/bbs/MacShop/index.html": _index_page(
+            [(_aid(1), "newest")], prev="index3",
+            pinned=[(_aid(24 * 200), "[公告] 板規")]),
+        "https://www.ptt.cc/bbs/MacShop/index3.html": _index_page(
+            [(_aid(20), "yesterday")], prev="index2"),
+        "https://www.ptt.cc/bbs/MacShop/index2.html": _index_page(
+            [(_aid(40), "too old"), (_aid(30), "straddles")], prev="index1"),
+        "https://www.ptt.cc/bbs/MacShop/index1.html": _index_page([(_aid(60), "never read")]),
+    }
+    fetched = []
+    scraper = PTTScraper()
+    monkeypatch.setattr(scraper, "_get", lambda url: fetched.append(url) or pages[url])
+
+    titles = [t for _, t in scraper._recent_posts()]
+
+    assert titles == ["newest", "yesterday", "straddles"]
+    # A pinned post is months old; counting it would end the walk on page one.
+    assert "[公告] 板規" not in titles
+    # The page holding the first post past the cutoff is the last one read.
+    assert "https://www.ptt.cc/bbs/MacShop/index1.html" not in fetched
+
+
+def test_the_page_ceiling_stops_the_walk(monkeypatch):
+    monkeypatch.setattr("src.scrapers.ptt.MAX_PAGES", 2)
+    scraper = PTTScraper()
+    fetched = []
+    monkeypatch.setattr(scraper, "_get",
+                        lambda url: fetched.append(url) or _index_page([(_aid(1), "x")], prev="index9"))
+    scraper._recent_posts()
+    assert len(fetched) == 2
 
 
 def test_the_board_filter_no_longer_stops_at_m4(monkeypatch):
@@ -242,17 +296,15 @@ def test_the_board_filter_no_longer_stops_at_m4(monkeypatch):
     was discarded whole. This was the same mistake's third copy, in the one
     place that decides whether a listing is fetched at all.
     """
-    entries = [
-        SimpleNamespace(title="[賣機] MacBook Pro M5 Max 16吋", link="https://p/m5"),
-        SimpleNamespace(title="[賣機] MacBook Neo A18 Pro 8G/256G", link="https://p/a18"),
-        SimpleNamespace(title="[賣機] MacBook Air M2 13吋", link="https://p/m2"),
-        SimpleNamespace(title="[徵求] MacBook Air M3", link="https://p/wanted"),
-        SimpleNamespace(title="[賣機] MacBook Pro 2016 Core m5 1.2G", link="https://p/intel"),
+    posts = [
+        ("https://p/m5", "[賣機] MacBook Pro M5 Max 16吋"),
+        ("https://p/a18", "[賣機] MacBook Neo A18 Pro 8G/256G"),
+        ("https://p/m2", "[賣機] MacBook Air M2 13吋"),
+        ("https://p/wanted", "[徵求] MacBook Air M3"),
+        ("https://p/intel", "[賣機] MacBook Pro 2016 Core m5 1.2G"),
     ]
-    monkeypatch.setattr("src.scrapers.ptt.feedparser.parse",
-                        lambda url: SimpleNamespace(entries=entries))
-
     scraper = PTTScraper()
+    monkeypatch.setattr(scraper, "_recent_posts", lambda: posts)
     monkeypatch.setattr(scraper, "_delay", 0)
     fetched = []
 

@@ -1,7 +1,7 @@
 """Retirement of listings that stopped appearing.
 
-Every scraper here reads a rolling window, not full inventory: PTT an Atom feed
-of recent posts, Shopee the newest ~180 search results, Carousell the newest
+Every scraper here reads a rolling window, not full inventory: PTT the posts
+of the last day and a half, Shopee the newest ~180 search results, Carousell the newest
 entries in a sitemap. "Absent from this run" therefore means the listing
 scrolled out of the window, not that it sold — two Shopee runs once returned
 completely disjoint sets (35 products vs 30, zero overlap), and the set-based

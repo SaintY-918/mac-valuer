@@ -1,7 +1,13 @@
 """PTT MacShop scraper.
 
-Plain HTTP, no browser. The listing index is PTT's Atom feed, and every article
-is a static server-rendered page whose body sits in <div id="main-content">.
+Plain HTTP, no browser. Listings come from the board's own index pages, walked
+back page by page until the posts are older than PTT_LOOKBACK_HOURS, and every
+article is a static server-rendered page whose body sits in <div id="main-content">.
+
+The index used to be PTT's Atom feed, which holds the newest 20 posts and no
+more. On 2026-09-21 those 20 covered two and a half hours of a board flooded by
+the iPhone 18 launch, none of them a Mac; a scraper that runs once a day saw a
+tenth of the day and reported nothing for six nights as a quiet board.
 
 This file used to launch Chromium for each detail page, and that cost the
 project three nights of CI. ba2d143 deleted `playwright install` from the daily
@@ -20,9 +26,10 @@ import html
 import logging
 import os
 import re
+import time
 from typing import Optional
+from urllib.parse import urljoin
 
-import feedparser
 import requests
 
 from src.scrapers.base import BaseScraper, RawListing
@@ -30,7 +37,21 @@ from src.utils.chip_extract import detect_product, mentions_apple_silicon
 
 logger = logging.getLogger(__name__)
 
-_RSS_URL = "https://www.ptt.cc/atom/MacShop.xml"
+_BOARD_URL = "https://www.ptt.cc/bbs/MacShop/index.html"
+# The pipeline runs once a day and GitHub's cron can start an hour or more late,
+# so reach back further than a day. Overlap costs a few detail requests;
+# a gap costs listings.
+LOOKBACK_HOURS = float(os.getenv("PTT_LOOKBACK_HOURS", "36"))
+# A ceiling, not a target: 20 posts a page, so 40 pages is 800 posts.
+MAX_PAGES = int(os.getenv("PTT_MAX_PAGES", "40"))
+
+# The article id carries the posting time: M.<unix seconds>.A.<hex>.html.
+# A deleted post keeps its row but loses the link, so it never matches.
+_ENTRY_RE = re.compile(
+    r'<div class="title">\s*<a href="(/bbs/MacShop/M\.(\d+)\.A\.[0-9A-Fa-f]+\.html)">(.*?)</a>',
+    re.S,
+)
+_PREV_RE = re.compile(r'<a class="btn wide" href="(/bbs/MacShop/index\d+\.html)">&lsaquo; 上頁</a>')
 _EXCLUDE_TITLES = ["徵", "[交換]", "intel", "i5", "i7", "i9", "2017", "2018"]
 _SOLD_KEYWORDS = ["售出", "已售出", "Sold", "sold", "已出"]
 
@@ -69,6 +90,21 @@ def _main_content_text(page_html: str) -> str:
     body = _SPACES.sub(" ", body)
     body = "\n".join(line.strip() for line in body.split("\n"))
     return _BLANK_RUN.sub("\n\n", body).strip()
+
+
+def _parse_index(page_html: str) -> tuple[list[tuple[str, str, int]], Optional[str]]:
+    """(url, title, posted_at) for each post on one index page, and the previous page.
+
+    Pinned posts sit below <div class="r-list-sep"> on the newest page. They are
+    months old, so letting them in would end the walk on the first page.
+    """
+    listed = page_html.split('class="r-list-sep"')[0]
+    entries = [
+        (urljoin(_BOARD_URL, path), html.unescape(title).strip(), int(epoch))
+        for path, epoch, title in _ENTRY_RE.findall(listed)
+    ]
+    prev = _PREV_RE.search(page_html)
+    return entries, urljoin(_BOARD_URL, prev.group(1)) if prev else None
 
 
 class PTTScraper(BaseScraper):
@@ -133,24 +169,44 @@ class PTTScraper(BaseScraper):
                 logger.warning("Scrape failed for %s: %s", url, e)
                 return None
 
-    async def fetch_listings(self) -> list[RawListing]:
-        feed = await asyncio.to_thread(feedparser.parse, _RSS_URL)
+    def _recent_posts(self) -> list[tuple[str, str]]:
+        """(url, title) of every post from the last LOOKBACK_HOURS, newest page first."""
+        cutoff = time.time() - LOOKBACK_HOURS * 3600
+        posts: dict[str, str] = {}
+        url: Optional[str] = _BOARD_URL
+        pages = 0
+        seen_any = False
+        while url and pages < MAX_PAGES:
+            entries, url = _parse_index(self._get(url))
+            pages += 1
+            seen_any = seen_any or bool(entries)
+            for link, title, posted_at in entries:
+                if posted_at >= cutoff:
+                    posts.setdefault(link, title)
+            if entries and min(p for _, _, p in entries) < cutoff:
+                break
+        else:
+            if url:
+                logger.warning(
+                    "PTT: stopped at PTT_MAX_PAGES=%d before reaching %sh back; older posts missed",
+                    MAX_PAGES, LOOKBACK_HOURS,
+                )
 
-        # An unreachable feed comes back from feedparser as an object with no
-        # entries, not as an exception. Returning [] there would be reported as
-        # a quiet night on a board that is never quiet — the same confusion
-        # between "nothing matched" and "the scraper is broken" that the
-        # heartbeat exists to prevent.
-        if not feed.entries:
+        # The board is never empty. No posts at all means the markup changed,
+        # and returning [] would be reported as a quiet night.
+        if not seen_any:
             raise RuntimeError(
-                f"PTT feed returned no entries (bozo={getattr(feed, 'bozo', '?')}, "
-                f"{getattr(feed, 'bozo_exception', 'no exception')})"
+                f"PTT index yielded no posts ({_BOARD_URL}) — the page layout has probably changed"
             )
+        logger.info("PTT: %d posts in the last %sh across %d index pages",
+                    len(posts), LOOKBACK_HOURS, pages)
+        return list(posts.items())
+
+    async def fetch_listings(self) -> list[RawListing]:
+        posts = await asyncio.to_thread(self._recent_posts)
 
         candidates: list[tuple[str, str]] = []
-        for entry in feed.entries:
-            title: str = entry.title
-            url: str = entry.link
+        for url, title in posts:
             if any(tag in title for tag in _EXCLUDE_TITLES):
                 continue
             # Was a literal ["m1", "m2", "m3", "m4"], which silently dropped
@@ -167,8 +223,8 @@ class PTTScraper(BaseScraper):
             candidates.append((url, title))
 
         logger.info(
-            "RSS: %d entries, %d pass filter — fetching detail pages...",
-            len(feed.entries),
+            "PTT: %d posts, %d pass filter — fetching detail pages...",
+            len(posts),
             len(candidates),
         )
 

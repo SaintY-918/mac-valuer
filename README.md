@@ -98,7 +98,7 @@ Sitemap:  ...               # 主要入口
 
 | 層 | 選擇 |
 |---|---|
-| 爬蟲 | `feedparser`（PTT）、`camoufox`（蝦皮反指紋）、`requests`（旋轉拍賣） |
+| 爬蟲 | `requests`（PTT、旋轉拍賣）、`camoufox`（蝦皮反指紋） |
 | 解析 | Gemini 3.5 Flash Lite ＋ 自訂 regex；規則優先、LLM 補漏 |
 | 資料庫 | SQLAlchemy → Neon PostgreSQL |
 | 前端 | Streamlit，套用自有設計系統 |
