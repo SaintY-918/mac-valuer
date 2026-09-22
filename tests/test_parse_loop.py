@@ -248,3 +248,15 @@ def test_desktops_have_no_threshold_until_one_is_set(monkeypatch):
 def test_a_bad_desktop_threshold_falls_back_to_silence(monkeypatch):
     monkeypatch.setenv("ALERT_VFM_THRESHOLD_DESKTOP", "lots")
     assert _read_alert_threshold("desktop") is None
+
+
+def test_the_gemini_client_is_built_with_a_timeout(monkeypatch):
+    # The SDK waits forever by default. On 2026-09-22 one request never came
+    # back and the run was killed by its time limit before it sent anything.
+    import src.parser.llm_parser as llm_parser
+
+    monkeypatch.setenv("GEMINI_API_KEY", "placeholder-key")
+    monkeypatch.setattr(llm_parser, "_client", None)
+    client = llm_parser._get_client()
+    assert client._api_client._http_options.timeout == llm_parser._TIMEOUT_MS
+    assert llm_parser._TIMEOUT_MS > 0

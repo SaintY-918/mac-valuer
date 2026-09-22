@@ -30,6 +30,14 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 _model_id = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+# The SDK's default is no timeout at all. On 2026-09-22, with the model
+# answering 503 "high demand", one request never returned: the log went quiet
+# at 22:53 and the task was killed by its one-hour limit at 23:14, before
+# scoring, alerts or the heartbeat — no Discord message at all. Flash Lite
+# answers in seconds; 30 s keeps the worst case, every one of the run's
+# MAX_REPAIR_CALLS_PER_RUN timing out, inside that hour. A call that times out
+# is skipped like any other parser error and parsed on the next run.
+_TIMEOUT_MS = int(float(os.getenv("GEMINI_TIMEOUT_SECONDS", "30")) * 1000)
 # Built on first use, not at import. Constructing it eagerly meant the module
 # could not be imported without a key — so even extract_specs_from_text, which
 # is pure regex and never calls the API, was untestable and CI could not load it.
@@ -45,7 +53,7 @@ def _get_client() -> genai.Client:
                 "GEMINI_API_KEY is not set — required for LLM parsing, "
                 "but not for the regex extractors in this module."
             )
-        _client = genai.Client(api_key=key)
+        _client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=_TIMEOUT_MS))
     return _client
 
 # The free tier caps requests per minute, and the pipeline used to pace itself
