@@ -15,18 +15,19 @@
 # Safe to run repeatedly. Needs no administrator rights: the task runs as you,
 # at normal privilege, and no password is stored.
 #
-# Why any of this is local: Shopee and Carousell both refuse datacenter IPs, so
-# a GitHub runner cannot reach them. Measured, see docs/decisions.md.
+# Why any of this is local: Shopee, Carousell and, since 2026-09-22, PTT all
+# refuse datacenter IPs, so a GitHub runner cannot reach them. Measured, see
+# docs/decisions.md (#20, #47).
 
 [CmdletBinding()]
 param(
     [string]$TaskName = "mac-valuer-scrape",
     [string]$At       = "02:30",
-    # Which scrapers the run should fetch. Both of these refuse datacenter IPs,
-    # so CI cannot reach either; Carousell first because it is plain HTTP and
-    # finishes in a minute, and the task is capped at an hour that Shopee's
+    # Which scrapers the run should fetch. All three refuse datacenter IPs, so
+    # CI cannot reach them. PTT and Carousell first because they are plain HTTP
+    # and finish in a minute, and the task is capped at an hour that Shopee's
     # browser path could otherwise consume.
-    [string]$Sources  = "carousell,shopee",
+    [string]$Sources  = "ptt,carousell,shopee",
     # Shopee demands a human slide captcha every day or two and no setting gets
     # past it (decisions #42). A second task runs at logon -- when a human is
     # demonstrably present -- so the clearance is fresh by the time the nightly

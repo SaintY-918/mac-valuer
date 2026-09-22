@@ -35,9 +35,18 @@ jobs:
       # browser-based source is ever added back here, this is the step that has
       # to come with it.
 
-      # PTT is the only source a runner can reach. Shopee and Carousell both
+      # No source is reachable from a runner right now. Shopee and Carousell
       # refuse datacenter IPs — measured for each, see docs/decisions.md — and
-      # they run from a residential machine instead (scripts/install_schedule.ps1).
+      # PTT joined them on 2026-09-22: every page of www.ptt.cc, the old Atom
+      # feed included, 403s here under every header set (#47, ptt-probe.yml).
+      # All three run from a residential machine (scripts/install_schedule.ps1).
+      #
+      # PTT stays in this run anyway, on purpose. Nobody knows yet whether the
+      # block is policy or the iPhone 18 launch load, and this run is the one
+      # thing that notices it lift: the night the nightly ⛔ turns into ✅, PTT
+      # can come back here. Until then that ⛔ is expected. Both runs writing
+      # PTT is harmless — alerts are deduplicated by price and a failed source
+      # skips the sweep.
       #
       # Carousell used to run here on the theory that plain HTTP against
       # server-rendered pages meant no anti-bot wall. It 403s every request from

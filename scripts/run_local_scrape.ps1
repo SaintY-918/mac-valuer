@@ -1,9 +1,10 @@
 ﻿# Run the scrapers that cannot run on a GitHub runner, from this machine, and
 # write into the cloud database.
 #
-# Why this exists: both Shopee and Carousell refuse datacenter IPs. For Shopee
-# the login session also cannot follow an ephemeral runner. Measured, not
-# assumed -- see docs/decisions.md and src/scripts/probe_carousell.py.
+# Why this exists: Shopee, Carousell and, since 2026-09-22, PTT all refuse
+# datacenter IPs. For Shopee the login session also cannot follow an ephemeral
+# runner. Measured, not assumed -- see docs/decisions.md and
+# src/scripts/probe_carousell.py, src/scripts/probe_ptt.py.
 #
 # Registered as a daily scheduled task by scripts/install_schedule.ps1. That
 # script is the definition; this one is what it runs. The registration used to
@@ -17,7 +18,7 @@ param(
     # Comma-separated, in the order they should run. Put the cheap reliable
     # source first: the task is capped at one hour, and Shopee's browser path
     # is the one that can hang.
-    [string]$Sources = "carousell,shopee"
+    [string]$Sources = "ptt,carousell,shopee"
 )
 
 $ErrorActionPreference = "Stop"

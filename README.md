@@ -43,8 +43,8 @@ PTT MacShop (Atom)     蝦皮 (瀏覽器)      旋轉拍賣 (JSON-LD)
           Streamlit Dashboard    Discord 撿漏推播
 ```
 
-**執行位置**：PTT 與旋轉拍賣跑在 GitHub Actions（純 HTTP，無反爬牆）；
-蝦皮需住宅 IP，跑在本機排程。原因見下。
+**執行位置**：三個來源都擋資料中心 IP，全部跑在本機排程（住宅 IP）。
+PTT 從 2026-09-22 起也拒絕 GitHub runner；GitHub Actions 仍每晚試一次 PTT，用來偵測解封。原因見下。
 
 ---
 
@@ -180,6 +180,9 @@ pytest tests/e2e                      # 瀏覽器實測，約 20 秒
 - **蝦皮無法完全自動化**：需住宅 IP，且**約每一到兩天要有人手動通過一次滑動驗證**
   （`python -m src.scripts.refresh_shopee_session`，約 30 秒）。實測與 headless、
   指紋、請求數無關——人解完驗證後，無頭模式照樣讀完全部搜尋頁。
+- **PTT 依賴本機開機**：GitHub runner 被 PTT 擋（2026-09-22 起）。本機排程回溯 36 小時，
+  關機一天不會漏，連續關機超過一天半才會。
+  → [`docs/decisions.md` #47](docs/decisions.md)
 - **行情價顯示尚未實作**：模型對不同世代非中性，需各世代累積 30 筆以上才有統計意義。
   → [`docs/decisions.md` #5](docs/decisions.md)
 

@@ -8,6 +8,10 @@
 ## [未發布]
 
 ### 變更
+- **PTT 改由本機排程執行。** 2026-09-22 起 PTT 對 GitHub runner 的每一種頁面
+  （含舊的 Atom feed）、每一種標頭都回 403，住宅 IP 則正常；本機排程來源改為
+  `ptt,carousell,shopee`。CI 仍每晚試一次 PTT，用來偵測解封，解封前的 ⛔ 屬預期
+  （見 [decisions #47](docs/decisions.md#47-ptt-搬到本機排程ci-保留-ptt-作為解封偵測)）。
 - **`CLAUDE.md` 精簡為「一定要做／一定不能做」**（121 → 89 行）。原本混了規則、
   背景說明與操作指令三種東西，讀的人分不出哪些是鐵律。額度限制表與個資檢查指令
   移至 [`docs/operations.md`](docs/operations.md)；spec 對照表格式維持不動，

@@ -55,7 +55,13 @@ heartbeat 每個來源一行，列出下架／售出／仍在架／**無法判�
 - **傳輸方式**：**純 HTTP，不使用瀏覽器**。清單來自看板列表頁
   （`https://www.ptt.cc/bbs/MacShop/index.html`，往「‹ 上頁」翻），內文來自文章頁的
   `<div id="main-content">`，兩者皆為伺服器端渲染的靜態內容。
-  因此**可在 GitHub Actions 上執行**，不依賴本機。
+- **執行位置：本機排程為主；GitHub Actions 照跑，用來偵測解封。**
+  此處原本寫「因此可在 GitHub Actions 上執行，不依賴本機」——這是從住宅 IP 推論的，
+  沒有從 runner 驗證過。2026-09-22 起，GitHub runner 對 `www.ptt.cc` 的**每一種頁面**
+  （列表頁、Atom feed、文章頁、首頁）都拿到 403，換五種標頭都一樣；住宅 IP 則全部 200。
+  9/21 的排程還用同一個 feed 成功，所以是 PTT 那邊開始擋資料中心 IP，
+  不是改讀列表頁造成的（`src/scripts/probe_ptt.py`、decisions #47）。
+  CI 的 PTT 失敗在解封前屬於預期；哪天變回成功，就重新評估搬回 CI。
 
   此處曾以 Playwright 開 Chromium 讀每一篇文章。2026-08-26 的 `ba2d143`
   以「camoufox has no browser installed」為由刪掉 workflow 的
