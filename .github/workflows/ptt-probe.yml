@@ -1,0 +1,27 @@
+name: PTT probe
+
+# Manual only. Answers one question: after the 2026-09-22 run got 403 on the
+# MacShop index, which of PTT's pages can this runner still read, and does the
+# header set matter? Staying in CI, moving the index elsewhere, and moving PTT
+# to the residential machine are three different fixes.
+#
+# Read-only GETs of public pages, three seconds apart. No secrets, no login.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Probe PTT from this runner
+        run: python -m src.scripts.probe_ptt
