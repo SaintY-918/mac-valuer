@@ -58,13 +58,18 @@ async def _attempt(scraper, headless: bool) -> int:
         items = await scraper._search_items(page, scraper._keywords[0], newest=0)
 
         if not items and not headless:
-            print("\nShopee is asking for the slide captcha.")
-            print("Drag the puzzle piece in the window that just opened.")
+            print("\nShopee wants a human: the slide captcha, and a login first if it asks.")
+            print("Do whatever the window that just opened asks for.")
             print("Leave the window alone afterwards; this closes it for you.\n")
             deadline = time.time() + WAIT_SECONDS
+            # A login page is a wall too. This loop used to wait only while the
+            # URL said "verify"; on 2026-09-22 Shopee sent the window to its
+            # login page instead, the loop took that for "cleared" after one
+            # poll, and closed the window two seconds later with the user
+            # still looking at the login form.
             while time.time() < deadline:
                 await asyncio.sleep(POLL_SECONDS)
-                if "verify" not in page.url:
+                if "verify" not in page.url and "login" not in page.url:
                     break
             await asyncio.sleep(2)
             items = await scraper._search_items(page, scraper._keywords[0], newest=0)
